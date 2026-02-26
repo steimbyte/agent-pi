@@ -20,7 +20,8 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { Text, type AutocompleteItem, visibleWidth, truncateToWidth } from "@mariozechner/pi-tui";
+import { Text, type AutocompleteItem, visibleWidth, truncateToWidth, Container, Spacer, Box, Markdown, matchesKey, Key } from "@mariozechner/pi-tui";
+import { DynamicBorder, getMarkdownTheme as getPiMdTheme } from "@mariozechner/pi-coding-agent";
 import { spawn } from "child_process";
 import { readdirSync, readFileSync, existsSync, mkdirSync, unlinkSync, appendFileSync } from "fs";
 import { dirname, join, resolve } from "path";
@@ -156,6 +157,7 @@ export default function (pi: ExtensionAPI) {
 	let sessionDir = "";
 	let contextWindow = 0;
 	let widgetCompact = true;
+	let selectedAgentIndex = -1; // -1 = no selection
 
 	function loadAgents(cwd: string) {
 		const extDir = dirname(fileURLToPath(import.meta.url));
@@ -197,6 +199,7 @@ export default function (pi: ExtensionAPI) {
 		const defsByName = new Map(allAgentDefs.map(d => [d.name.toLowerCase(), d]));
 
 		agentStates.clear();
+		selectedAgentIndex = -1; // Reset selection when team changes
 		for (const member of members) {
 			const def = defsByName.get(member.toLowerCase());
 			if (!def) continue;
@@ -222,33 +225,7 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Grid Rendering ───────────────────────────
 
-	function renderCard(state: AgentState, colWidth: number, theme: any): string[] {
-		const w = colWidth - 2;
-		const truncate = (s: string, max: number) => s.length > max ? s.slice(0, max - 3) + "..." : s;
-
-		const name = displayName(state.def.name);
-		const pctStr = theme.fg("dim", `${Math.ceil(state.contextPct)}%`);
-		const pctVis = visibleWidth(pctStr);
-		const pad = Math.max(0, w - 1 - pctVis); // -1 for leading space
-		const line1 = " " + pctStr + " ".repeat(pad);
-
-		const statusBtn = statusButton(state.status, truncate(name, w - 10), theme);
-		const timeStr = state.status !== "idle" ? ` ${Math.round(state.elapsed / 1000)}s` : "";
-		const statusLine = statusBtn + timeStr;
-		const statusVisible = visibleWidth(statusBtn) + timeStr.length;
-
-		const top = "┌" + "─".repeat(w) + "┐";
-		const bot = "└" + "─".repeat(w) + "┘";
-		const border = (content: string, visLen: number) =>
-			theme.fg("dim", "│") + content + " ".repeat(Math.max(0, w - visLen)) + theme.fg("dim", "│");
-
-		return [
-			theme.fg("dim", top),
-			border(line1, 1 + pctVis),
-			border(" " + statusLine, 1 + statusVisible),
-			theme.fg("dim", bot),
-		];
-	}
+	// No longer needed - we're using pills only
 
 	function updateWidget() {
 		if (!widgetCtx) return;
@@ -263,10 +240,13 @@ export default function (pi: ExtensionAPI) {
 						return text.render(width);
 					}
 
+					// Filter out completed/idle agents - only show active ones
+					const active = Array.from(agentStates.values()).filter(
+						(a) => a.status !== "idle" && a.status !== "done",
+					);
+
 					if (widgetCompact) {
-						const active = Array.from(agentStates.values()).filter(
-							(a) => a.status !== "idle",
-						);
+						// Compact mode: show active agents as pills in status bar
 						if (active.length === 0) {
 							text.setText("");
 							return [];
@@ -299,31 +279,52 @@ export default function (pi: ExtensionAPI) {
 						return text.render(width);
 					}
 
-					const cols = Math.min(gridCols, agentStates.size);
-					const gap = 1;
-					const agents = Array.from(agentStates.values());
-					const totalCardsWidth = cols * Math.floor((width - gap * (cols - 1)) / cols) + gap * (cols - 1);
-					const leftPad = Math.max(0, width - totalCardsWidth);
-					const colWidth = Math.floor((width - leftPad - gap * (cols - 1)) / cols);
-					const rows: string[][] = [];
-
-					for (let i = 0; i < agents.length; i += cols) {
-						const rowAgents = agents.slice(i, i + cols);
-						const cards = rowAgents.map(a => renderCard(a, colWidth, theme));
-
-						while (cards.length < cols) {
-							cards.push(Array(4).fill(" ".repeat(colWidth)));
+					// Expanded mode: show selectable pills in a row
+					if (active.length === 0) {
+						// Reset selection if no active agents
+						if (selectedAgentIndex >= 0) {
+							selectedAgentIndex = -1;
 						}
-
-						const cardHeight = cards[0].length;
-						for (let line = 0; line < cardHeight; line++) {
-							const row = cards.map(card => card[line] || "").join(" ".repeat(gap));
-							rows.push([" ".repeat(leftPad) + row]);
-						}
+						text.setText(theme.fg("dim", "No active agents. Press F1/F2 to navigate when agents are running."));
+						return text.render(width);
 					}
 
-					const output = rows.map(r => r[0]);
-					text.setText(output.join("\n"));
+					// Reset selection if it's out of bounds (agent completed)
+					if (selectedAgentIndex >= active.length) {
+						selectedAgentIndex = -1;
+					}
+
+					// Map selectedAgentIndex to filtered active agents
+					const selectedActiveIndex = selectedAgentIndex >= 0 && selectedAgentIndex < active.length 
+						? selectedAgentIndex 
+						: -1;
+
+					const abbreviateName = (name: string) => displayName(name);
+					const pills = active.map((a, idx) => {
+						const name = abbreviateName(a.def.name);
+						const pill = statusButton(a.status, name, theme);
+						
+						// Add selection indicator (border around selected pill)
+						if (idx === selectedActiveIndex) {
+							const pillVis = visibleWidth(pill);
+							// Wrap with selection border: [pill]
+							return theme.fg("accent", "[") + pill + theme.fg("accent", "]");
+						}
+						return pill;
+					});
+
+					const sep = theme.fg("dim", "  ");
+					const pillsLine = pills.join(sep);
+					const pillsVis = visibleWidth(pillsLine);
+
+					// Add hint text if selection is active
+					let hint = "";
+					if (selectedActiveIndex >= 0) {
+						hint = theme.fg("dim", "  (F3: details, F4: exit)");
+					}
+
+					const output = pillsLine + hint;
+					text.setText(output);
 					return text.render(width);
 				},
 				invalidate() {
@@ -715,6 +716,188 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	// ── Agent Detail Overlay ──────────────────────
+
+	class AgentDetailOverlay {
+		private scrollOffset = 0;
+
+		constructor(
+			private agent: AgentState,
+			private onDone: () => void,
+		) {}
+
+		handleInput(data: string, tui: any): void {
+			if (matchesKey(data, Key.up)) {
+				this.scrollOffset = Math.max(0, this.scrollOffset - 1);
+			} else if (matchesKey(data, Key.down)) {
+				this.scrollOffset = Math.max(0, this.scrollOffset + 1);
+			} else if (matchesKey(data, Key.escape)) {
+				this.onDone();
+				return;
+			}
+			tui.requestRender();
+		}
+
+		render(width: number, height: number, theme: any): string[] {
+			const container = new Container();
+			const mdTheme = getPiMdTheme();
+
+			// Panel is 90% of terminal width, centered
+			const panelW = Math.max(60, Math.floor(width * 0.9));
+
+			// Header with agent name pill and status
+			container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+			const name = displayName(this.agent.def.name);
+			const statusBtn = statusButton(this.agent.status, name, theme, false);
+			const timeStr = this.agent.status !== "idle" ? ` ${Math.round(this.agent.elapsed / 1000)}s` : "";
+			container.addChild(new Text(
+				`${statusBtn}${timeStr}`,
+				1, 0,
+			));
+			container.addChild(new Spacer(1));
+
+			// Split panel: metadata left, system prompt right
+			const innerWidth = panelW - 2;
+			const leftW = Math.max(25, Math.floor(innerWidth * 0.35));
+			const rightW = innerWidth - leftW - 3; // 3 for " │ "
+
+			// Left panel: metadata
+			const leftLines: string[] = [];
+			const formatRow = (label: string, value: string) => {
+				const labelStr = theme.fg("accent", theme.bold(padRight(label + ":", 12)));
+				const valueStr = theme.fg("muted", value);
+				return labelStr + " " + valueStr;
+			};
+
+			leftLines.push(formatRow("STATUS", this.agent.status));
+			leftLines.push(formatRow("MODEL", this.agent.def.model || "(inherit)"));
+			leftLines.push(formatRow("TOOLS", this.agent.def.tools));
+			leftLines.push(formatRow("CONTEXT", `${Math.ceil(this.agent.contextPct)}%`));
+			leftLines.push(formatRow("RUNS", this.agent.runCount.toString()));
+			leftLines.push(formatRow("TOOLS USED", this.agent.toolCount.toString()));
+			leftLines.push(formatRow("FILE", this.agent.def.file));
+			if (this.agent.sessionFile) {
+				leftLines.push(formatRow("SESSION", this.agent.sessionFile));
+			}
+
+			// Right panel: system prompt (markdown)
+			const rightContainer = new Container();
+			rightContainer.addChild(new Text(theme.fg("accent", theme.bold(" SYSTEM PROMPT")), 0, 0));
+			rightContainer.addChild(new Spacer(1));
+			rightContainer.addChild(new Markdown(this.agent.def.systemPrompt, 0, 0, mdTheme));
+			const rightLines = rightContainer.render(rightW);
+
+			// Combine side by side
+			const divider = theme.fg("dim", " │ ");
+			const combined = sideBySide(leftLines, rightLines, leftW, rightW, divider);
+			for (const line of combined) {
+				container.addChild(new Text(line, 1, 0));
+			}
+
+			// Task and last work sections
+			container.addChild(new Spacer(1));
+			if (this.agent.task) {
+				container.addChild(new Text(theme.fg("accent", theme.bold(" ─── TASK ───")), 1, 0));
+				const taskLines = wordWrap(this.agent.task, innerWidth);
+				for (const line of taskLines) {
+					container.addChild(new Text(theme.fg("muted", line), 1, 0));
+				}
+				container.addChild(new Spacer(1));
+			}
+
+			if (this.agent.lastWork) {
+				container.addChild(new Text(theme.fg("accent", theme.bold(" ─── LAST WORK ───")), 1, 0));
+				const workLines = wordWrap(this.agent.lastWork, innerWidth);
+				for (const line of workLines) {
+					container.addChild(new Text(theme.fg("muted", line), 1, 0));
+				}
+				container.addChild(new Spacer(1));
+			}
+
+			// Footer
+			container.addChild(new Text(
+				theme.fg("dim", " ↑/↓ Scroll • Esc Close"),
+				1, 0,
+			));
+			container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+
+			const panelLines = container.render(panelW);
+
+			// Dark backdrop: center the panel vertically and horizontally
+			const dimBg = "\x1b[48;2;10;10;15m";
+			const reset = "\x1b[0m";
+			const darkRow = dimBg + " ".repeat(width) + reset;
+			const padLeft = Math.max(0, Math.floor((width - panelW) / 2));
+			const padLeftStr = dimBg + " ".repeat(padLeft);
+			const padRightCount = Math.max(0, width - panelW - padLeft);
+			const padRightStr = " ".repeat(padRightCount) + reset;
+
+			const topPad = Math.max(1, Math.floor((height - panelLines.length) / 2));
+			const result: string[] = [];
+
+			for (let i = 0; i < topPad; i++) result.push(darkRow);
+			for (const line of panelLines) {
+				result.push(padLeftStr + line + padRightStr);
+			}
+			const bottomPad = Math.max(0, height - topPad - panelLines.length);
+			for (let i = 0; i < bottomPad; i++) result.push(darkRow);
+
+			return result;
+		}
+	}
+
+	function padRight(s: string, width: number): string {
+		const vis = visibleWidth(s);
+		if (vis >= width) return truncateToWidth(s, width, "");
+		return s + " ".repeat(width - vis);
+	}
+
+	function wordWrap(text: string, width: number): string[] {
+		if (visibleWidth(text) <= width) return [text];
+		const words = text.split(/(\s+)/);
+		const lines: string[] = [];
+		let cur = "";
+		for (const w of words) {
+			if (visibleWidth(cur + w) > width && cur.length > 0) {
+				lines.push(cur);
+				cur = w.trimStart();
+			} else {
+				cur += w;
+			}
+		}
+		if (cur.length > 0) lines.push(cur);
+		return lines;
+	}
+
+	function sideBySide(
+		left: string[], right: string[],
+		leftW: number, rightW: number,
+		divider: string,
+	): string[] {
+		const max = Math.max(left.length, right.length);
+		const result: string[] = [];
+		for (let i = 0; i < max; i++) {
+			const l = i < left.length ? padRight(left[i], leftW) : " ".repeat(leftW);
+			const r = i < right.length ? truncateToWidth(right[i], rightW, "") : "";
+			result.push(l + divider + r);
+		}
+		return result;
+	}
+
+	async function showAgentDetail(ctx: any, agent: AgentState) {
+		await ctx.ui.custom((tui, theme, _kb, done) => {
+			const overlay = new AgentDetailOverlay(agent, () => done(undefined));
+			return {
+				render: (w) => overlay.render(w, process.stdout.rows || 24, theme),
+				handleInput: (data) => overlay.handleInput(data, tui),
+				invalidate: () => {},
+			};
+		}, {
+			overlay: true,
+			overlayOptions: { width: "90%", anchor: "center" },
+		});
+	}
+
 	pi.registerShortcut("ctrl+g", {
 		description: "Toggle agent team compact/expanded view",
 		handler: async (ctx) => {
@@ -722,6 +905,87 @@ export default function (pi: ExtensionAPI) {
 			widgetCompact = !widgetCompact;
 			updateWidget();
 		},
+	});
+
+	const selectNext = async (ctx: any) => {
+		if (!ctx.hasUI) return;
+		widgetCtx = ctx;
+		// Filter to active agents only
+		const active = Array.from(agentStates.values()).filter(
+			(a) => a.status !== "idle" && a.status !== "done",
+		);
+		const count = active.length;
+		if (count === 0) {
+			selectedAgentIndex = -1;
+			return;
+		}
+		// Auto-expand to expanded view if in compact mode so selection is visible
+		if (widgetCompact) {
+			widgetCompact = false;
+		}
+		if (selectedAgentIndex < 0) selectedAgentIndex = 0;
+		selectedAgentIndex = (selectedAgentIndex + 1) % count;
+		updateWidget();
+	};
+
+	const selectPrev = async (ctx: any) => {
+		if (!ctx.hasUI) return;
+		widgetCtx = ctx;
+		// Filter to active agents only
+		const active = Array.from(agentStates.values()).filter(
+			(a) => a.status !== "idle" && a.status !== "done",
+		);
+		const count = active.length;
+		if (count === 0) {
+			selectedAgentIndex = -1;
+			return;
+		}
+		// Auto-expand to expanded view if in compact mode so selection is visible
+		if (widgetCompact) {
+			widgetCompact = false;
+		}
+		if (selectedAgentIndex < 0) selectedAgentIndex = count - 1;
+		selectedAgentIndex = (selectedAgentIndex - 1 + count) % count;
+		updateWidget();
+	};
+
+	const exitSelection = async (ctx: any) => {
+		if (!ctx.hasUI) return;
+		widgetCtx = ctx;
+		selectedAgentIndex = -1;
+		updateWidget();
+	};
+
+	// Use function keys - universally compatible and reliable
+	pi.registerShortcut("f1", {
+		description: "Select previous agent",
+		handler: selectPrev,
+	});
+
+	pi.registerShortcut("f2", {
+		description: "Select next agent",
+		handler: selectNext,
+	});
+
+	pi.registerShortcut("f3", {
+		description: "Open agent detail view",
+		handler: async (ctx) => {
+			if (!ctx.hasUI) return;
+			// Filter to active agents only
+			const active = Array.from(agentStates.values()).filter(
+				(a) => a.status !== "idle" && a.status !== "done",
+			);
+			const count = active.length;
+			if (count === 0 || selectedAgentIndex < 0 || selectedAgentIndex >= count) return;
+			const agent = active[selectedAgentIndex];
+			if (!agent) return;
+			await showAgentDetail(ctx, agent);
+		},
+	});
+
+	pi.registerShortcut("f4", {
+		description: "Exit agent selection",
+		handler: exitSelection,
 	});
 
 	// ── System Prompt Override ───────────────────
