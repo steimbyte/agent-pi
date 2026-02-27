@@ -32,6 +32,7 @@ import { applyExtensionDefaults } from "./lib/themeMap.ts";
 import { statusButton } from "./lib/pipeline-render.ts";
 import { DEFAULT_SUBAGENT_MODEL } from "./lib/defaults.ts";
 import { padRight, wordWrap, sideBySide } from "./lib/ui-helpers.ts";
+import { renderTaskList, navDown, navUp, navExit, navEnter, type TaskListInfo, type TaskListState } from "./lib/task-list-render.ts";
 
 // ── Types ────────────────────────────────────────
 
@@ -173,6 +174,7 @@ export default function (pi: ExtensionAPI) {
 	let contextWindow = 0;
 	let widgetCompact = true;
 	let selectedAgentIndex = -1; // -1 = no selection
+	let taskListState: TaskListState = { selectedIndex: -1, scrollOffset: 0 };
 
 	function loadAgents(cwd: string) {
 		const extDir = dirname(fileURLToPath(import.meta.url));
@@ -639,12 +641,8 @@ export default function (pi: ExtensionAPI) {
 		},
 
 		renderCall(args, theme) {
-			const agentName = (args as any).agent || "?";
-			const agentModel = agentStates.get(agentName.toLowerCase())?.def.model || "";
-			const modelSuffix = agentModel ? theme.fg("dim", ` | ${agentModel}`) : "";
 			return new Text(
-				theme.fg("toolTitle", theme.bold("dispatch_agent ")) +
-				theme.fg("accent", agentName) + modelSuffix,
+				theme.fg("dim", "dispatching:"),
 				0, 0,
 			);
 		},
