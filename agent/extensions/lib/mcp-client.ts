@@ -52,7 +52,7 @@ export class McpClient {
 	private buffer = "";
 	private connected = false;
 
-	constructor(serverPath: string, env: Record<string, string>, timeoutMs = 30_000) {
+	constructor(serverPath: string, env: Record<string, string>, timeoutMs = 60_000) {
 		this.serverPath = serverPath;
 		this.env = env;
 		this.timeoutMs = timeoutMs;

@@ -241,6 +241,12 @@ describe("McpClient", () => {
 		await expect(callPromise).rejects.toThrow("Unknown tool: bad_tool");
 	});
 
+	it("should default to 60s timeout", () => {
+		const client = new McpClient("/path/to/server.js", {});
+		// Access private field via any cast — fragile but validates the default
+		expect((client as any).timeoutMs).toBe(60_000);
+	});
+
 	it("should timeout tool calls after configured timeout", async () => {
 		vi.useFakeTimers();
 
