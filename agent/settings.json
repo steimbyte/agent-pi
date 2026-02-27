@@ -19,6 +19,7 @@
     "extensions/system-select.ts",
     "extensions/theme-cycler.ts",
     "extensions/tasks.ts",
+    "extensions/commander-mcp.ts",
     "extensions/toolkit-commands.ts",
     "extensions/user-question.ts",
     "extensions/agent-nav.ts",
