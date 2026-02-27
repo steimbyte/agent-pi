@@ -53,6 +53,7 @@ interface AgentDef {
 
 interface StepState {
 	agent: string;
+	description: string;
 	status: "pending" | "running" | "done" | "error";
 	elapsed: number;
 	lastWork: string;
@@ -242,12 +243,16 @@ export default function (pi: ExtensionAPI) {
 
 	function activateChain(chain: ChainDef) {
 		activeChain = chain;
-		stepStates = chain.steps.map(s => ({
-			agent: s.agent,
-			status: "pending" as const,
-			elapsed: 0,
-			lastWork: "",
-		}));
+		stepStates = chain.steps.map(s => {
+			const agentDef = allAgents.get(s.agent.toLowerCase());
+			return {
+				agent: s.agent,
+				description: agentDef?.description || "",
+				status: "pending" as const,
+				elapsed: 0,
+				lastWork: "",
+			};
+		});
 		// Skip widget re-registration if reset is pending — let before_agent_start handle it
 		if (!pendingReset) {
 			updateWidget();
@@ -273,6 +278,14 @@ export default function (pi: ExtensionAPI) {
 				: state.lastWork;
 			lines.push(theme.fg("dim", " \u2502") + "  " + theme.fg("muted", work));
 		}
+		if (state.status === "pending" && state.description) {
+			const prefix = "    ";
+			const maxDesc = width - prefix.length - 1;
+			const desc = state.description.length > maxDesc
+				? state.description.slice(0, maxDesc - 3) + "..."
+				: state.description;
+			lines.push("    " + theme.fg("dim", desc));
+		}
 		return lines;
 	}
 
@@ -289,6 +302,9 @@ export default function (pi: ExtensionAPI) {
 					}
 
 					const outputLines: string[] = [];
+					const chainName = activeChain.name;
+					const rule = "─".repeat(Math.max(0, width - chainName.length - 6));
+					outputLines.push(theme.fg("dim", ` ── `) + theme.fg("accent", chainName) + theme.fg("dim", ` ${rule}`));
 					for (let i = 0; i < stepStates.length; i++) {
 						outputLines.push(...renderStepLines(stepStates[i], width, theme));
 						if (i < stepStates.length - 1) {
@@ -430,12 +446,16 @@ export default function (pi: ExtensionAPI) {
 		const chainStart = Date.now();
 
 		// Reset all steps to pending
-		stepStates = activeChain.steps.map(s => ({
-			agent: s.agent,
-			status: "pending" as const,
-			elapsed: 0,
-			lastWork: "",
-		}));
+		stepStates = activeChain.steps.map(s => {
+			const agentDef = allAgents.get(s.agent.toLowerCase());
+			return {
+				agent: s.agent,
+				description: agentDef?.description || "",
+				status: "pending" as const,
+				elapsed: 0,
+				lastWork: "",
+			};
+		});
 		updateWidget();
 
 		let input = task;
@@ -680,12 +700,16 @@ export default function (pi: ExtensionAPI) {
 		if (pendingReset && activeChain) {
 			pendingReset = false;
 			widgetCtx = _ctx;
-			stepStates = activeChain.steps.map(s => ({
-				agent: s.agent,
-				status: "pending" as const,
-				elapsed: 0,
-				lastWork: "",
-			}));
+			stepStates = activeChain.steps.map(s => {
+				const agentDef = allAgents.get(s.agent.toLowerCase());
+				return {
+					agent: s.agent,
+					description: agentDef?.description || "",
+					status: "pending" as const,
+					elapsed: 0,
+					lastWork: "",
+				};
+			});
 			updateWidget();
 		}
 
