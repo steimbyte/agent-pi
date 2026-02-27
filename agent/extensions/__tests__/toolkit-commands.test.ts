@@ -2,7 +2,7 @@
 // ABOUTME: Verifies subdirectory prefix logic and TOOL_MAP legacy entry resolution.
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -62,6 +62,27 @@ describe("scanCommandDirs", () => {
 
 		expect(cmds).toHaveLength(1);
 		expect(cmds[0].name).toBe("my-custom-name");
+	});
+
+	it("should follow symlinked directories and prefix with dir name", async () => {
+		// Create a real directory with a command file outside tmpDir
+		const realDir = mkdtempSync(join(tmpdir(), "toolkit-cmd-real-"));
+		const realSubDir = join(realDir, "commander");
+		mkdirSync(realSubDir);
+		writeMdFile(realSubDir, "task.md", { description: "Commander task" }, "Task body");
+		writeMdFile(realSubDir, "plan.md", { description: "Commander plan" }, "Plan body");
+
+		// Symlink it into the scan root
+		symlinkSync(realSubDir, join(tmpDir, "commander"));
+
+		const { scanCommandDirs } = await import("../toolkit-commands.ts");
+		const cmds = scanCommandDirs(tmpDir);
+
+		expect(cmds).toHaveLength(2);
+		const names = cmds.map(c => c.name).sort();
+		expect(names).toEqual(["commander-plan", "commander-task"]);
+
+		rmSync(realDir, { recursive: true, force: true });
 	});
 
 	it("should handle nested subdirectories with joined prefix", async () => {

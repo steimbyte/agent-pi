@@ -13,7 +13,7 @@ function formatTime(date: Date): string {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-interface HistoryItem {
+export interface HistoryItem {
     type: 'user' | 'assistant' | 'tool';
     title: string;
     content: string;
@@ -21,7 +21,7 @@ interface HistoryItem {
     elapsed?: string;
 }
 
-class SessionReplayUI {
+export class SessionReplayUI {
     private selectedIndex = 0;
     private expandedIndex: number | null = null;
     private scrollOffset = 0;

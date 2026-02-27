@@ -13,7 +13,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
 import { join, dirname, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "child_process";
@@ -151,7 +151,8 @@ export function scanCommandDirs(baseDir: string): CommandDef[] {
 		if (!existsSync(d)) return;
 		for (const file of readdirSync(d, { withFileTypes: true })) {
 			const fullPath = join(d, file.name);
-			if (file.isDirectory()) {
+			// Follow symlinks to directories (isDirectory() returns false for symlinks)
+			if (file.isDirectory() || (file.isSymbolicLink() && statSync(fullPath).isDirectory())) {
 				scan(fullPath);
 			} else if (file.name.endsWith(".md")) {
 				const def = parseCommandFile(fullPath);
