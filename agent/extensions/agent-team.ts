@@ -240,9 +240,9 @@ export default function (pi: ExtensionAPI) {
 						return text.render(width);
 					}
 
-					// Filter out completed/idle agents - only show active ones
+					// Filter out only idle agents - show all others including completed ones
 					const active = Array.from(agentStates.values()).filter(
-						(a) => a.status !== "idle" && a.status !== "done",
+						(a) => a.status !== "idle",
 					);
 
 					if (widgetCompact) {
@@ -281,11 +281,11 @@ export default function (pi: ExtensionAPI) {
 
 					// Expanded mode: show selectable pills in a row
 					if (active.length === 0) {
-						// Reset selection if no active agents
+						// Reset selection if no agents available
 						if (selectedAgentIndex >= 0) {
 							selectedAgentIndex = -1;
 						}
-						text.setText(theme.fg("dim", "No active agents. Press F1/F2 to navigate when agents are running."));
+						text.setText(theme.fg("dim", "No agents available. Press F1/F2 to navigate when agents are running."));
 						return text.render(width);
 					}
 
@@ -306,7 +306,6 @@ export default function (pi: ExtensionAPI) {
 						
 						// Add selection indicator (border around selected pill)
 						if (idx === selectedActiveIndex) {
-							const pillVis = visibleWidth(pill);
 							// Wrap with selection border: [pill]
 							return theme.fg("accent", "[") + pill + theme.fg("accent", "]");
 						}
@@ -323,7 +322,12 @@ export default function (pi: ExtensionAPI) {
 						hint = theme.fg("dim", "  (F3: details, F4: exit)");
 					}
 
-					const output = pillsLine + hint;
+					const hintVis = visibleWidth(hint);
+					const totalVis = pillsVis + hintVis;
+					
+					// Right-align pills: pad left side to push pills to the right
+					const padding = Math.max(0, width - totalVis);
+					const output = " ".repeat(padding) + pillsLine + hint;
 					text.setText(output);
 					return text.render(width);
 				},
@@ -718,6 +722,45 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Agent Detail Overlay ──────────────────────
 
+	// Helper functions for detail view
+	function padRight(s: string, width: number): string {
+		const vis = visibleWidth(s);
+		if (vis >= width) return truncateToWidth(s, width, "");
+		return s + " ".repeat(width - vis);
+	}
+
+	function wordWrap(text: string, width: number): string[] {
+		if (visibleWidth(text) <= width) return [text];
+		const words = text.split(/(\s+)/);
+		const lines: string[] = [];
+		let cur = "";
+		for (const w of words) {
+			if (visibleWidth(cur + w) > width && cur.length > 0) {
+				lines.push(cur);
+				cur = w.trimStart();
+			} else {
+				cur += w;
+			}
+		}
+		if (cur.length > 0) lines.push(cur);
+		return lines;
+	}
+
+	function sideBySide(
+		left: string[], right: string[],
+		leftW: number, rightW: number,
+		divider: string,
+	): string[] {
+		const max = Math.max(left.length, right.length);
+		const result: string[] = [];
+		for (let i = 0; i < max; i++) {
+			const l = i < left.length ? padRight(left[i], leftW) : " ".repeat(leftW);
+			const r = i < right.length ? truncateToWidth(right[i], rightW, "") : "";
+			result.push(l + divider + r);
+		}
+		return result;
+	}
+
 	class AgentDetailOverlay {
 		private scrollOffset = 0;
 
@@ -731,6 +774,10 @@ export default function (pi: ExtensionAPI) {
 				this.scrollOffset = Math.max(0, this.scrollOffset - 1);
 			} else if (matchesKey(data, Key.down)) {
 				this.scrollOffset = Math.max(0, this.scrollOffset + 1);
+			} else if (matchesKey(data, Key.pageUp)) {
+				this.scrollOffset = Math.max(0, this.scrollOffset - 10);
+			} else if (matchesKey(data, Key.pageDown)) {
+				this.scrollOffset = Math.max(0, this.scrollOffset + 10);
 			} else if (matchesKey(data, Key.escape)) {
 				this.onDone();
 				return;
@@ -742,8 +789,9 @@ export default function (pi: ExtensionAPI) {
 			const container = new Container();
 			const mdTheme = getPiMdTheme();
 
-			// Panel is 90% of terminal width, centered
-			const panelW = Math.max(60, Math.floor(width * 0.9));
+			// Full width with minimal padding
+			const panelW = width - 4; // 2 chars padding each side
+			const innerWidth = panelW - 2; // Account for border
 
 			// Header with agent name pill and status
 			container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
@@ -756,48 +804,35 @@ export default function (pi: ExtensionAPI) {
 			));
 			container.addChild(new Spacer(1));
 
-			// Split panel: metadata left, system prompt right
-			const innerWidth = panelW - 2;
-			const leftW = Math.max(25, Math.floor(innerWidth * 0.35));
-			const rightW = innerWidth - leftW - 3; // 3 for " │ "
-
-			// Left panel: metadata
-			const leftLines: string[] = [];
+			// Metadata section (full width, vertical list)
+			container.addChild(new Text(theme.fg("accent", theme.bold(" ─── METADATA ───")), 1, 0));
 			const formatRow = (label: string, value: string) => {
-				const labelStr = theme.fg("accent", theme.bold(padRight(label + ":", 12)));
+				const labelStr = theme.fg("accent", theme.bold(padRight(label + ":", 14)));
 				const valueStr = theme.fg("muted", value);
 				return labelStr + " " + valueStr;
 			};
 
-			leftLines.push(formatRow("STATUS", this.agent.status));
-			leftLines.push(formatRow("MODEL", this.agent.def.model || "(inherit)"));
-			leftLines.push(formatRow("TOOLS", this.agent.def.tools));
-			leftLines.push(formatRow("CONTEXT", `${Math.ceil(this.agent.contextPct)}%`));
-			leftLines.push(formatRow("RUNS", this.agent.runCount.toString()));
-			leftLines.push(formatRow("TOOLS USED", this.agent.toolCount.toString()));
-			leftLines.push(formatRow("FILE", this.agent.def.file));
+			container.addChild(new Text(formatRow("STATUS", this.agent.status.toUpperCase()), 1, 0));
+			container.addChild(new Text(formatRow("MODEL", this.agent.def.model || "(inherit)"), 1, 0));
+			container.addChild(new Text(formatRow("TOOLS", this.agent.def.tools), 1, 0));
+			container.addChild(new Text(formatRow("CONTEXT", `${Math.ceil(this.agent.contextPct)}%`), 1, 0));
+			container.addChild(new Text(formatRow("RUNS", this.agent.runCount.toString()), 1, 0));
+			container.addChild(new Text(formatRow("TOOLS USED", this.agent.toolCount.toString()), 1, 0));
+			container.addChild(new Text(formatRow("FILE", this.agent.def.file), 1, 0));
 			if (this.agent.sessionFile) {
-				leftLines.push(formatRow("SESSION", this.agent.sessionFile));
+				container.addChild(new Text(formatRow("SESSION", this.agent.sessionFile), 1, 0));
 			}
-
-			// Right panel: system prompt (markdown)
-			const rightContainer = new Container();
-			rightContainer.addChild(new Text(theme.fg("accent", theme.bold(" SYSTEM PROMPT")), 0, 0));
-			rightContainer.addChild(new Spacer(1));
-			rightContainer.addChild(new Markdown(this.agent.def.systemPrompt, 0, 0, mdTheme));
-			const rightLines = rightContainer.render(rightW);
-
-			// Combine side by side
-			const divider = theme.fg("dim", " │ ");
-			const combined = sideBySide(leftLines, rightLines, leftW, rightW, divider);
-			for (const line of combined) {
-				container.addChild(new Text(line, 1, 0));
-			}
-
-			// Task and last work sections
 			container.addChild(new Spacer(1));
+
+			// System prompt section (full width)
+			container.addChild(new Text(theme.fg("accent", theme.bold(" ─── SYSTEM PROMPT ───")), 1, 0));
+			container.addChild(new Spacer(1));
+			container.addChild(new Markdown(this.agent.def.systemPrompt, 1, 0, mdTheme));
+			container.addChild(new Spacer(1));
+
+			// Task section (if present)
 			if (this.agent.task) {
-				container.addChild(new Text(theme.fg("accent", theme.bold(" ─── TASK ───")), 1, 0));
+				container.addChild(new Text(theme.fg("accent", theme.bold(" ─── CURRENT TASK ───")), 1, 0));
 				const taskLines = wordWrap(this.agent.task, innerWidth);
 				for (const line of taskLines) {
 					container.addChild(new Text(theme.fg("muted", line), 1, 0));
@@ -805,6 +840,7 @@ export default function (pi: ExtensionAPI) {
 				container.addChild(new Spacer(1));
 			}
 
+			// Last work section (if present)
 			if (this.agent.lastWork) {
 				container.addChild(new Text(theme.fg("accent", theme.bold(" ─── LAST WORK ───")), 1, 0));
 				const workLines = wordWrap(this.agent.lastWork, innerWidth);
@@ -814,33 +850,41 @@ export default function (pi: ExtensionAPI) {
 				container.addChild(new Spacer(1));
 			}
 
-			// Footer
-			container.addChild(new Text(
-				theme.fg("dim", " ↑/↓ Scroll • Esc Close"),
-				1, 0,
-			));
-			container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+			// Render all content (without footer)
+			const allLines = container.render(panelW);
+			const contentHeight = height - 1; // Reserve 1 line for footer
+			const maxScroll = Math.max(0, allLines.length - contentHeight);
+			this.scrollOffset = Math.min(this.scrollOffset, maxScroll);
 
-			const panelLines = container.render(panelW);
+			// Apply scrolling - show content lines, footer always at bottom
+			const visibleContentLines = allLines.slice(this.scrollOffset, this.scrollOffset + contentHeight);
 
-			// Dark backdrop: center the panel vertically and horizontally
+			// Footer (always visible at bottom, separate from scrollable content)
+			const scrollInfo = maxScroll > 0 
+				? ` ↑/↓/PgUp/PgDn Scroll (${this.scrollOffset + 1}-${Math.min(this.scrollOffset + contentHeight, allLines.length)}/${allLines.length}) • Esc Close`
+				: " Esc Close";
+			const footer = theme.fg("dim", scrollInfo);
+			const footerLine = padRight(footer, panelW);
+
+			// Dark backdrop: full screen from top to bottom
 			const dimBg = "\x1b[48;2;10;10;15m";
 			const reset = "\x1b[0m";
-			const darkRow = dimBg + " ".repeat(width) + reset;
-			const padLeft = Math.max(0, Math.floor((width - panelW) / 2));
-			const padLeftStr = dimBg + " ".repeat(padLeft);
-			const padRightCount = Math.max(0, width - panelW - padLeft);
-			const padRightStr = " ".repeat(padRightCount) + reset;
+			const padLeftStr = dimBg + "  "; // 2 chars padding
+			const padRightStr = "  " + reset;
 
-			const topPad = Math.max(1, Math.floor((height - panelLines.length) / 2));
 			const result: string[] = [];
-
-			for (let i = 0; i < topPad; i++) result.push(darkRow);
-			for (const line of panelLines) {
+			// Render visible content lines from top
+			for (const line of visibleContentLines) {
 				result.push(padLeftStr + line + padRightStr);
 			}
-			const bottomPad = Math.max(0, height - topPad - panelLines.length);
-			for (let i = 0; i < bottomPad; i++) result.push(darkRow);
+
+			// Add footer at bottom
+			result.push(padLeftStr + footerLine + padRightStr);
+
+			// Fill remaining height with dark background
+			while (result.length < height) {
+				result.push(dimBg + " ".repeat(width) + reset);
+			}
 
 			return result;
 		}
@@ -894,7 +938,7 @@ export default function (pi: ExtensionAPI) {
 			};
 		}, {
 			overlay: true,
-			overlayOptions: { width: "90%", anchor: "center" },
+			overlayOptions: { width: "100%" },
 		});
 	}
 
@@ -910,9 +954,9 @@ export default function (pi: ExtensionAPI) {
 	const selectNext = async (ctx: any) => {
 		if (!ctx.hasUI) return;
 		widgetCtx = ctx;
-		// Filter to active agents only
+		// Filter out only idle agents - include completed ones
 		const active = Array.from(agentStates.values()).filter(
-			(a) => a.status !== "idle" && a.status !== "done",
+			(a) => a.status !== "idle",
 		);
 		const count = active.length;
 		if (count === 0) {
@@ -931,9 +975,9 @@ export default function (pi: ExtensionAPI) {
 	const selectPrev = async (ctx: any) => {
 		if (!ctx.hasUI) return;
 		widgetCtx = ctx;
-		// Filter to active agents only
+		// Filter out only idle agents - include completed ones
 		const active = Array.from(agentStates.values()).filter(
-			(a) => a.status !== "idle" && a.status !== "done",
+			(a) => a.status !== "idle",
 		);
 		const count = active.length;
 		if (count === 0) {
@@ -971,9 +1015,9 @@ export default function (pi: ExtensionAPI) {
 		description: "Open agent detail view",
 		handler: async (ctx) => {
 			if (!ctx.hasUI) return;
-			// Filter to active agents only
+			// Filter out only idle agents - include completed ones
 			const active = Array.from(agentStates.values()).filter(
-				(a) => a.status !== "idle" && a.status !== "done",
+				(a) => a.status !== "idle",
 			);
 			const count = active.length;
 			if (count === 0 || selectedAgentIndex < 0 || selectedAgentIndex >= count) return;
@@ -1015,9 +1059,15 @@ You can ONLY dispatch to agents listed below. Do not attempt to dispatch to agen
 - If a task fails, try a different agent or adjust the task description
 - Summarize the outcome for the user
 
+## Asking the User
+- You have the ask_user tool to ask the user questions directly
+- Use it when you need clarification, decisions, or preferences before dispatching agents
+- Three modes: "select" (pick from options with markdown preview), "input" (free text), "confirm" (yes/no)
+- If a sub-agent needs user input, it should describe what it needs — then YOU ask the user and relay the answer
+
 ## Rules
 - NEVER try to read, write, or execute code directly — you have no such tools
-- ALWAYS use dispatch_agent to get work done
+- Use dispatch_agent to delegate work and ask_user to get user input
 - You can chain agents: use scout to explore, then builder to implement
 - You can dispatch the same agent multiple times with different tasks
 - Keep tasks focused — one clear objective per dispatch
@@ -1076,7 +1126,7 @@ ${agentCatalog}`,
 		}
 
 		// Lock down to dispatcher-only (tool already registered at top level)
-		pi.setActiveTools(["dispatch_agent"]);
+		pi.setActiveTools(["dispatch_agent", "ask_user"]);
 
 		_ctx.ui.setStatus("agent-team", `Team: ${activeTeamName} (${agentStates.size})`);
 		updateWidget();
