@@ -52,13 +52,13 @@ describe("ensureTaskVisible (scroll logic)", () => {
 // ── computeHeightMode ───────────────────────────────────────────────
 
 describe("computeHeightMode", () => {
-	it("uses two-line mode when enough height", () => {
+	it("uses one-line mode when enough height", () => {
 		const result = computeHeightMode(3, 10);
-		expect(result.mode).toBe("two-line");
+		expect(result.mode).toBe("one-line");
 		expect(result.visibleCount).toBe(3);
 	});
 
-	it("falls back to one-line mode when two-line doesn't fit", () => {
+	it("uses one-line mode with all tasks when they fit", () => {
 		const result = computeHeightMode(4, 8);
 		expect(result.mode).toBe("one-line");
 		expect(result.visibleCount).toBe(4);
@@ -72,7 +72,7 @@ describe("computeHeightMode", () => {
 
 	it("caps at MAX_VISIBLE_TASKS for large lists", () => {
 		const result = computeHeightMode(20, 50);
-		expect(result.mode).toBe("two-line");
+		expect(result.mode).toBe("one-line");
 		expect(result.visibleCount).toBe(MAX_VISIBLE_TASKS);
 	});
 
@@ -84,7 +84,7 @@ describe("computeHeightMode", () => {
 
 	it("handles zero tasks", () => {
 		const result = computeHeightMode(0, 20);
-		expect(result.mode).toBe("two-line");
+		expect(result.mode).toBe("one-line");
 		expect(result.visibleCount).toBe(0);
 	});
 });
@@ -236,16 +236,16 @@ describe("renderTaskList", () => {
 		expect(joined).toContain("-");
 	});
 
-	it("uses two-line mode by default with enough height", () => {
+	it("uses one-line mode with enough height", () => {
 		const tasks = makeTasks(3);
 		const result = renderTaskList(tasks, { selectedIndex: -1, scrollOffset: 0 }, 80, 20, mockDeps);
-		// 2 lines per task (3 tasks) + 2 chrome = 8 lines
-		expect(result.length).toBe(8);
+		// 1 line per task (3 tasks) + 2 chrome = 5 lines
+		expect(result.length).toBe(5);
 	});
 
 	it("uses one-line mode when height is constrained", () => {
 		const tasks = makeTasks(4);
-		// 4 tasks * 2 + 2 = 10 > 8, so falls to one-line: 4 + 2 = 6
+		// 4 tasks * 1 + 2 chrome = 6 lines
 		const result = renderTaskList(tasks, { selectedIndex: -1, scrollOffset: 0 }, 80, 8, mockDeps);
 		expect(result.length).toBe(6);
 	});
@@ -259,14 +259,14 @@ describe("renderTaskList", () => {
 	it("shows selection marker on selected task", () => {
 		const result = renderTaskList(makeTasks(3), { selectedIndex: 1, scrollOffset: 0 }, 80, 20, mockDeps);
 		const joined = result.join("\n");
-		expect(joined).toContain("\u2190selected");
+		expect(joined).toContain("\u2190sel");
 	});
 
 	it("limits visible tasks to MAX_VISIBLE_TASKS", () => {
 		const tasks = makeTasks(10);
-		// 6 * 2 + 2 = 14
+		// 6 * 1 + 2 chrome = 8
 		const result = renderTaskList(tasks, { selectedIndex: -1, scrollOffset: 0 }, 80, 30, mockDeps);
-		expect(result.length).toBe(14);
+		expect(result.length).toBe(8);
 	});
 
 	it("shows scroll indicators when tasks overflow", () => {

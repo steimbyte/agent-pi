@@ -18,7 +18,7 @@ export interface TaskListState {
 }
 
 export interface HeightMode {
-	mode: "two-line" | "one-line";
+	mode: "one-line";
 	visibleCount: number;
 }
 
@@ -45,12 +45,7 @@ export function computeHeightMode(taskCount: number, availableHeight: number): H
 	const chrome = 2; // top border + bottom border
 	const visible = Math.min(taskCount, MAX_VISIBLE_TASKS);
 
-	const twoLineHeight = visible * 2 + chrome;
-	if (twoLineHeight <= availableHeight) {
-		return { mode: "two-line", visibleCount: visible };
-	}
-
-	const oneLineHeight = visible * 1 + chrome;
+	const oneLineHeight = visible + chrome;
 	if (oneLineHeight <= availableHeight) {
 		return { mode: "one-line", visibleCount: visible };
 	}
@@ -121,9 +116,7 @@ export function renderTaskList(
 	const lines: string[] = [];
 
 	// ── Header border ──────────────────────────────────────────────
-	const headerLabel = heightMode.mode === "two-line"
-		? ` Tasks (${taskList.remaining}/${taskList.total} remaining) `
-		: ` Tasks (${taskList.remaining}/${taskList.total}) `;
+	const headerLabel = ` Tasks (${taskList.remaining}/${taskList.total}) `;
 	const aboveSuffix = above ? ` ${above} ` : "";
 	const headerLabelLen = headerLabel.length;
 	const aboveSuffixLen = aboveSuffix.length;
@@ -156,10 +149,8 @@ export function renderTaskList(
 				: "muted";
 
 		// Selection marker
-		const selMark = isSelected
-			? (heightMode.mode === "two-line" ? fg("accent", " \u2190selected") : fg("accent", " \u2190sel"))
-			: "";
-		const selMarkLen = isSelected ? (heightMode.mode === "two-line" ? 10 : 5) : 0;
+		const selMark = isSelected ? fg("accent", " \u2190sel") : "";
+		const selMarkLen = isSelected ? 5 : 0;
 
 		// Line 1: icon + #id + text
 		const prefix = `  ${iconStr} `;
@@ -170,14 +161,6 @@ export function renderTaskList(
 		const taskText = fg(textColor, trunc(task.text, Math.max(0, maxTextLen), "\u2026"));
 
 		lines.push(trunc(prefix + idStr + " " + taskText + selMark, width, ""));
-
-		// Line 2 (only in two-line mode): indented description
-		if (heightMode.mode === "two-line") {
-			const indent = "      ";
-			const maxDescLen = width - indent.length;
-			const descLine = indent + fg("dim", trunc(task.text, Math.max(0, maxDescLen), "\u2026"));
-			lines.push(trunc(descLine, width, ""));
-		}
 	}
 
 	// ── Footer border ──────────────────────────────────────────────
