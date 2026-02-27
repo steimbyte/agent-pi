@@ -255,8 +255,9 @@ export default function (pi: ExtensionAPI) {
 		// Sub-agents manage their own task discipline — don't gate them
 		if (process.env.PI_SUBAGENT === "1") return { block: false };
 		if (event.toolName === "tasks") return { block: false };
-		// Communication, orchestration, and dispatcher tools bypass the gate
+		// Communication, orchestration, dispatcher, and Commander MCP tools bypass the gate
 		if (["dispatch_agent", "dispatch_agents", "ask_user", "run_chain"].includes(event.toolName)) return { block: false };
+		if (event.toolName.startsWith("commander_")) return { block: false };
 
 		const pending = tasks.filter((t) => t.status !== "done");
 		const active = tasks.filter((t) => t.status === "inprogress");

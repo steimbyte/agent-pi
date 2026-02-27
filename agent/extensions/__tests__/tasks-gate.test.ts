@@ -8,7 +8,7 @@ import { describe, it, expect } from "vitest";
 const TASK_GATE_BYPASS_TOOLS = ["tasks", "dispatch_agent", "dispatch_agents", "ask_user", "run_chain"];
 
 function shouldBypassTaskGate(toolName: string): boolean {
-	return TASK_GATE_BYPASS_TOOLS.includes(toolName);
+	return TASK_GATE_BYPASS_TOOLS.includes(toolName) || toolName.startsWith("commander_");
 }
 
 describe("shouldBypassTaskGate", () => {
@@ -46,6 +46,24 @@ describe("shouldBypassTaskGate", () => {
 
 	it("should NOT bypass for empty string", () => {
 		expect(shouldBypassTaskGate("")).toBe(false);
+	});
+
+	it("should bypass for 'commander_task' tool", () => {
+		expect(shouldBypassTaskGate("commander_task")).toBe(true);
+	});
+
+	it("should bypass for 'commander_session' tool", () => {
+		expect(shouldBypassTaskGate("commander_session")).toBe(true);
+	});
+
+	it("should bypass for 'commander_mailbox' tool", () => {
+		expect(shouldBypassTaskGate("commander_mailbox")).toBe(true);
+	});
+
+	it("should bypass for any commander_* prefixed tool", () => {
+		expect(shouldBypassTaskGate("commander_workflow")).toBe(true);
+		expect(shouldBypassTaskGate("commander_orchestration")).toBe(true);
+		expect(shouldBypassTaskGate("commander_dependency")).toBe(true);
 	});
 });
 
