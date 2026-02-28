@@ -128,11 +128,11 @@ function scanAgentDirs(cwd: string, extProjectDir?: string): Map<string, AgentDe
 
 // ── Context Helpers ──────────────────────────────
 
-const CONTEXT_MAX = 15000;
+const CONTEXT_MAX = 30000;
 
 function truncateContext(text: string): string {
 	if (text.length <= CONTEXT_MAX) return text;
-	return text.slice(0, CONTEXT_MAX) + "\n\n... [context truncated at 15000 chars]";
+	return text.slice(0, CONTEXT_MAX) + "\n\n... [context truncated at 30000 chars]";
 }
 
 function resolveTemplate(
@@ -702,7 +702,10 @@ export default function (pi: ExtensionAPI) {
 
 			// Merge outputs into accumulated context
 			const mergedOutput = result.outputs.join("\n\n---\n\n");
-			accContext += `\n\n## Phase ${currentPhaseIndex + 1} Agent Output:\n${mergedOutput}`;
+			const outputSummary = mergedOutput.length > 3000
+				? mergedOutput.slice(0, 3000) + "\n\n... [output truncated, full output was " + mergedOutput.length + " chars]"
+				: mergedOutput;
+			accContext += `\n\n## Phase ${currentPhaseIndex + 1} Agent Output:\n${outputSummary}`;
 
 			// Store plan output if this is the plan phase
 			if (phase.def.name.toLowerCase() === "plan") {
@@ -972,9 +975,28 @@ export default function (pi: ExtensionAPI) {
 		if (phase.def.name === "understand") {
 			phaseInstructions = `## Phase Instructions: UNDERSTAND
 You are in the UNDERSTAND phase. Your job is to:
-1. Ask the user clarifying questions about their task
+1. Analyze the task and classify its complexity
 2. Use your codebase tools to verify assumptions
 3. When the task is fully clarified, call \`advance_phase\` with a detailed summary
+
+## Task Complexity Routing
+
+Before proceeding, classify the task:
+
+**SIMPLE** — Do it yourself. No pipeline needed.
+- Reading files, checking status, listing contents
+- Quick lookups, answering questions, single small edits
+→ Use your own tools directly. Do NOT call advance_phase.
+
+**MEDIUM** — Shortened pipeline. Skip GATHER.
+- Focused 1-2 file changes where scope is clear
+- Bug fixes where location is known
+→ Call advance_phase with skip_to: "plan" (or skip_to: "execute" if obvious)
+
+**COMPLEX** — Full pipeline.
+- Multi-file features, refactors, architectural changes
+- Tasks needing codebase exploration first
+→ Call advance_phase normally (all phases)
 
 Do NOT dispatch agents in this phase. Converse directly with the user.
 Call \`advance_phase\` with a comprehensive task summary when ready to proceed.`;
@@ -1013,6 +1035,12 @@ After reviewing the output:
 		return {
 			systemPrompt: `You are orchestrating a pipeline called "${activeConfig.name}".
 You have full codebase tools AND pipeline tools (advance_phase, dispatch_agents, pipeline_status).
+
+## When to Work Directly (Skip the Pipeline)
+- Simple one-off commands: reading a file, checking status, listing contents
+- Quick lookups, small edits, answering questions about the codebase
+- Anything you can handle in a single step without needing the pipeline
+Use your judgment — if it's quick, just do it; if it's real work, use the pipeline.
 
 ## Current Phase: ${phaseName}
 ${phase.def.description}

@@ -102,7 +102,7 @@ export class McpClient {
 		});
 	}
 
-	async callTool(name: string, args: Record<string, unknown>): Promise<any> {
+	async callTool(name: string, args: Record<string, unknown>, timeoutMs?: number): Promise<any> {
 		if (!this.proc || !this.connected) {
 			throw new Error("MCP client not connected");
 		}
@@ -111,11 +111,12 @@ export class McpClient {
 		const msg = formatJsonRpcRequest(id, "tools/call", { name, arguments: args });
 		this.proc.stdin!.write(msg + "\n");
 
+		const effectiveTimeout = timeoutMs ?? this.timeoutMs;
 		return new Promise<any>((resolve, reject) => {
 			const timer = setTimeout(() => {
 				this.pending.delete(id);
-				reject(new Error(`MCP tool call timeout after ${this.timeoutMs}ms`));
-			}, this.timeoutMs);
+				reject(new Error(`MCP tool call timeout after ${effectiveTimeout}ms`));
+			}, effectiveTimeout);
 
 			this.pending.set(id, { resolve, reject, timer });
 		});

@@ -1,14 +1,17 @@
-// Test suite for the tasks blocking gate bypass logic
-// Validates which tools are allowed to bypass the task-definition gate
+// ABOUTME: Test suite for the tasks blocking gate bypass logic.
+// ABOUTME: Validates which tools are allowed to bypass the task-definition gate.
 
 import { describe, it, expect } from "vitest";
 
 // This mirrors the bypass logic from tasks.ts (lines ~237-240).
 // The function under test is the allowlist check extracted from the tool_call handler.
-const TASK_GATE_BYPASS_TOOLS = ["tasks", "dispatch_agent", "dispatch_agents", "ask_user", "run_chain"];
+const TASK_GATE_BYPASS_TOOLS = ["tasks", "dispatch_agent", "dispatch_agents", "ask_user", "run_chain", "advance_phase", "pipeline_status"];
+const READ_ONLY_BYPASS_TOOLS = ["read", "grep", "find", "ls", "glob"];
 
 function shouldBypassTaskGate(toolName: string): boolean {
-	return TASK_GATE_BYPASS_TOOLS.includes(toolName) || toolName.startsWith("commander_");
+	return TASK_GATE_BYPASS_TOOLS.includes(toolName)
+		|| toolName.startsWith("commander_")
+		|| READ_ONLY_BYPASS_TOOLS.includes(toolName);
 }
 
 describe("shouldBypassTaskGate", () => {
@@ -64,6 +67,48 @@ describe("shouldBypassTaskGate", () => {
 		expect(shouldBypassTaskGate("commander_workflow")).toBe(true);
 		expect(shouldBypassTaskGate("commander_orchestration")).toBe(true);
 		expect(shouldBypassTaskGate("commander_dependency")).toBe(true);
+	});
+
+	it("should bypass for 'advance_phase' pipeline tool", () => {
+		expect(shouldBypassTaskGate("advance_phase")).toBe(true);
+	});
+
+	it("should bypass for 'pipeline_status' pipeline tool", () => {
+		expect(shouldBypassTaskGate("pipeline_status")).toBe(true);
+	});
+});
+
+describe("read-only tool bypass", () => {
+	it("should bypass for 'read' tool", () => {
+		expect(shouldBypassTaskGate("read")).toBe(true);
+	});
+
+	it("should bypass for 'grep' tool", () => {
+		expect(shouldBypassTaskGate("grep")).toBe(true);
+	});
+
+	it("should bypass for 'find' tool", () => {
+		expect(shouldBypassTaskGate("find")).toBe(true);
+	});
+
+	it("should bypass for 'ls' tool", () => {
+		expect(shouldBypassTaskGate("ls")).toBe(true);
+	});
+
+	it("should bypass for 'glob' tool", () => {
+		expect(shouldBypassTaskGate("glob")).toBe(true);
+	});
+
+	it("should NOT bypass for 'write' tool (write operation)", () => {
+		expect(shouldBypassTaskGate("write")).toBe(false);
+	});
+
+	it("should NOT bypass for 'edit' tool (write operation)", () => {
+		expect(shouldBypassTaskGate("edit")).toBe(false);
+	});
+
+	it("should NOT bypass for 'bash' tool (write operation)", () => {
+		expect(shouldBypassTaskGate("bash")).toBe(false);
 	});
 });
 
