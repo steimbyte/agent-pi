@@ -1,6 +1,6 @@
 ---
 name: reviewer
-model: hf:nvidia/Kimi-K2.5-NVFP4
+model: claude-opus-4-6
 description: Code review and quality checks — finds bugs, security issues, and style problems
 tools: read,bash,grep,find,ls
 ---
