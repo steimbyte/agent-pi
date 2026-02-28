@@ -96,3 +96,13 @@ export function removeMapping(state: SyncState, localId: number): SyncState {
 export function clearMappings(state: SyncState): SyncState {
 	return { ...state, mappings: [], groupId: undefined };
 }
+
+// ── Idempotency guards ──────────────────────────────────────────────
+
+export function shouldCreateGroup(state: SyncState): boolean {
+	return state.groupId === undefined;
+}
+
+export function isExternalSyncActive(): boolean {
+	return (globalThis as any).__piCommanderPlanGroupId !== undefined;
+}

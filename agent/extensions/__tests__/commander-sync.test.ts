@@ -12,6 +12,8 @@ import {
 	addMapping,
 	removeMapping,
 	clearMappings,
+	shouldCreateGroup,
+	isExternalSyncActive,
 	type CommanderTaskMapping,
 	type SyncState,
 } from "../lib/commander-sync.ts";
@@ -263,5 +265,30 @@ describe("clearMappings", () => {
 		clearMappings(state);
 		expect(state.mappings).toHaveLength(1);
 		expect(state.groupId).toBe(5);
+	});
+});
+
+describe("shouldCreateGroup", () => {
+	it("should return true when groupId is undefined", () => {
+		const state = emptySyncState();
+		expect(shouldCreateGroup(state)).toBe(true);
+	});
+
+	it("should return false when groupId is already set", () => {
+		const state: SyncState = { available: true, groupId: 7, mappings: [] };
+		expect(shouldCreateGroup(state)).toBe(false);
+	});
+});
+
+describe("isExternalSyncActive", () => {
+	it("should return false by default", () => {
+		delete (globalThis as any).__piCommanderPlanGroupId;
+		expect(isExternalSyncActive()).toBe(false);
+	});
+
+	it("should return true when __piCommanderPlanGroupId is set", () => {
+		(globalThis as any).__piCommanderPlanGroupId = 42;
+		expect(isExternalSyncActive()).toBe(true);
+		delete (globalThis as any).__piCommanderPlanGroupId;
 	});
 });

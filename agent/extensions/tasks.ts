@@ -36,6 +36,8 @@ import {
 	removeMapping,
 	clearMappings,
 	emptySyncState,
+	shouldCreateGroup,
+	isExternalSyncActive,
 	type SyncState,
 } from "./lib/commander-sync.ts";
 
@@ -393,19 +395,21 @@ export default function (pi: ExtensionAPI) {
 					listDescription = params.description || undefined;
 					syncState = emptySyncState();
 
-					// Sync: create Commander group for the new list
-					syncFireAndForget(async (client) => {
-						const res = await client.callTool("commander_task", {
-							operation: "group:create",
-							group_name: listTitle,
-							initiative_summary: listDescription || listTitle,
-							total_waves: 1,
-							working_directory: process.cwd(),
-							tasks: [],
+					// Sync: create Commander group for the new list (skip if external sync owns it)
+					if (!isExternalSyncActive() && shouldCreateGroup(syncState)) {
+						syncFireAndForget(async (client) => {
+							const res = await client.callTool("commander_task", {
+								operation: "group:create",
+								group_name: listTitle,
+								initiative_summary: listDescription || listTitle,
+								total_waves: 1,
+								working_directory: process.cwd(),
+								tasks: [],
+							});
+							const gid = parseGroupId(res);
+							if (gid !== undefined) syncState = { ...syncState, groupId: gid };
 						});
-						const gid = parseGroupId(res);
-						if (gid !== undefined) syncState = { ...syncState, groupId: gid };
-					});
+					}
 
 					const result = {
 						content: [{
@@ -449,18 +453,20 @@ export default function (pi: ExtensionAPI) {
 						added.push(t);
 					}
 
-					// Sync: create Commander tasks for each added item
-					for (const t of added) {
-						syncFireAndForget(async (client) => {
-							const res = await client.callTool("commander_task", {
-								operation: "create",
-								description: t.text,
-								working_directory: process.cwd(),
-								...(syncState.groupId ? { group_id: syncState.groupId } : {}),
+					// Sync: create Commander tasks for each added item (skip if external sync owns it)
+					if (!isExternalSyncActive()) {
+						for (const t of added) {
+							syncFireAndForget(async (client) => {
+								const res = await client.callTool("commander_task", {
+									operation: "create",
+									description: t.text,
+									working_directory: process.cwd(),
+									...(syncState.groupId ? { group_id: syncState.groupId } : {}),
+								});
+								const cid = parseCommanderTaskId(res);
+								if (cid !== undefined) syncState = addMapping(syncState, t.id, cid);
 							});
-							const cid = parseCommanderTaskId(res);
-							if (cid !== undefined) syncState = addMapping(syncState, t.id, cid);
-						});
+						}
 					}
 
 					const msg = added.length === 1
@@ -507,27 +513,29 @@ export default function (pi: ExtensionAPI) {
 						msg += `\n(Auto-paused ${demoted.map((t) => `#${t.id}`).join(", ")} → idle. Only one task can be in progress at a time.)`;
 					}
 
-					// Sync: update Commander task status
-					syncFireAndForget(async (client) => {
-						const cid = lookupMapping(syncState, task.id);
-						if (cid === undefined) return;
-						await client.callTool("commander_task", {
-							operation: "update",
-							task_id: cid,
-							status: localToCommander(task.status),
-						});
-					});
-					// Sync demoted tasks back to pending
-					for (const d of demoted) {
+					// Sync: update Commander task status (skip if external sync owns it)
+					if (!isExternalSyncActive()) {
 						syncFireAndForget(async (client) => {
-							const cid = lookupMapping(syncState, d.id);
+							const cid = lookupMapping(syncState, task.id);
 							if (cid === undefined) return;
 							await client.callTool("commander_task", {
 								operation: "update",
 								task_id: cid,
-								status: "pending",
+								status: localToCommander(task.status),
 							});
 						});
+						// Sync demoted tasks back to pending
+						for (const d of demoted) {
+							syncFireAndForget(async (client) => {
+								const cid = lookupMapping(syncState, d.id);
+								if (cid === undefined) return;
+								await client.callTool("commander_task", {
+									operation: "update",
+									task_id: cid,
+									status: "pending",
+								});
+							});
+						}
 					}
 
 					const result = {
@@ -557,16 +565,18 @@ export default function (pi: ExtensionAPI) {
 					}
 					const removed = tasks.splice(idx, 1)[0];
 
-					// Sync: cancel Commander task
-					syncFireAndForget(async (client) => {
-						const cid = lookupMapping(syncState, removed.id);
-						if (cid === undefined) return;
-						await client.callTool("commander_task", {
-							operation: "update",
-							task_id: cid,
-							status: "cancelled",
+					// Sync: cancel Commander task (skip if external sync owns it)
+					if (!isExternalSyncActive()) {
+						syncFireAndForget(async (client) => {
+							const cid = lookupMapping(syncState, removed.id);
+							if (cid === undefined) return;
+							await client.callTool("commander_task", {
+								operation: "update",
+								task_id: cid,
+								status: "cancelled",
+							});
 						});
-					});
+					}
 					syncState = removeMapping(syncState, removed.id);
 
 					const result = {
@@ -624,8 +634,8 @@ export default function (pi: ExtensionAPI) {
 
 					const count = tasks.length;
 
-					// Sync: cancel all mapped Commander tasks
-					if (syncState.mappings.length > 0) {
+					// Sync: cancel all mapped Commander tasks (skip if external sync owns it)
+					if (!isExternalSyncActive() && syncState.mappings.length > 0) {
 						syncFireAndForget(async (client) => {
 							for (const m of syncState.mappings) {
 								await client.callTool("commander_task", {
