@@ -289,7 +289,9 @@ export default function (pi: ExtensionAPI) {
 								taskList, taskListState, width, availableHeight,
 								{ truncateToWidth, fg: (c: string, t: string) => theme.fg(c, t) },
 							);
-							allLines.push(...taskLines);
+							const taskBg = "\x1b[48;5;236m";
+							const taskReset = "\x1b[0m";
+							allLines.push(...taskLines.map(l => taskBg + padRight(l, width) + taskReset));
 						}
 
 						// ── Agent pills line ─────────────────────────

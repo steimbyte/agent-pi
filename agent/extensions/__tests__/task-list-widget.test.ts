@@ -67,7 +67,7 @@ describe("computeHeightMode", () => {
 	it("reduces visible count when one-line doesn't fit either", () => {
 		const result = computeHeightMode(6, 5);
 		expect(result.mode).toBe("one-line");
-		expect(result.visibleCount).toBe(3);
+		expect(result.visibleCount).toBe(4);
 	});
 
 	it("caps at MAX_VISIBLE_TASKS for large lists", () => {
@@ -79,7 +79,7 @@ describe("computeHeightMode", () => {
 	it("returns at least 1 visible even in tiny terminals", () => {
 		const result = computeHeightMode(10, 3);
 		expect(result.mode).toBe("one-line");
-		expect(result.visibleCount).toBe(1);
+		expect(result.visibleCount).toBe(2);
 	});
 
 	it("handles zero tasks", () => {
@@ -212,19 +212,18 @@ describe("renderTaskList", () => {
 		expect(result).toEqual([]);
 	});
 
-	it("renders header and footer borders", () => {
+	it("renders header without borders", () => {
 		const result = renderTaskList(makeTasks(3), { selectedIndex: -1, scrollOffset: 0 }, 80, 20, mockDeps);
 		expect(result[0]).toContain("Tasks");
-		expect(result[0]).toContain("\u2500");
-		expect(result[result.length - 1]).toContain("\u2500");
+		expect(result[0]).not.toContain("\u2500");
 	});
 
 	it("shows task ids and text in the output", () => {
 		const result = renderTaskList(makeTasks(3), { selectedIndex: -1, scrollOffset: 0 }, 80, 20, mockDeps);
 		const joined = result.join("\n");
-		expect(joined).toContain("#1");
-		expect(joined).toContain("#2");
-		expect(joined).toContain("#3");
+		expect(joined).toContain(" 1 ");
+		expect(joined).toContain(" 2 ");
+		expect(joined).toContain(" 3 ");
 		expect(joined).toContain("Task 1 description");
 	});
 
@@ -239,15 +238,15 @@ describe("renderTaskList", () => {
 	it("uses one-line mode with enough height", () => {
 		const tasks = makeTasks(3);
 		const result = renderTaskList(tasks, { selectedIndex: -1, scrollOffset: 0 }, 80, 20, mockDeps);
-		// 1 line per task (3 tasks) + 2 chrome = 5 lines
-		expect(result.length).toBe(5);
+		// 1 line per task (3 tasks) + 1 chrome (header) = 4 lines
+		expect(result.length).toBe(4);
 	});
 
 	it("uses one-line mode when height is constrained", () => {
 		const tasks = makeTasks(4);
-		// 4 tasks * 1 + 2 chrome = 6 lines
+		// 4 tasks * 1 + 1 chrome = 5 lines
 		const result = renderTaskList(tasks, { selectedIndex: -1, scrollOffset: 0 }, 80, 8, mockDeps);
-		expect(result.length).toBe(6);
+		expect(result.length).toBe(5);
 	});
 
 	it("shows remaining/total in header", () => {
@@ -264,18 +263,17 @@ describe("renderTaskList", () => {
 
 	it("limits visible tasks to MAX_VISIBLE_TASKS", () => {
 		const tasks = makeTasks(10);
-		// 6 * 1 + 2 chrome = 8
+		// 6 * 1 + 1 chrome = 7
 		const result = renderTaskList(tasks, { selectedIndex: -1, scrollOffset: 0 }, 80, 30, mockDeps);
-		expect(result.length).toBe(8);
+		expect(result.length).toBe(7);
 	});
 
-	it("shows scroll indicators when tasks overflow", () => {
+	it("shows scroll indicators in header when tasks overflow", () => {
 		const tasks = makeTasks(10);
 		const result = renderTaskList(tasks, { selectedIndex: -1, scrollOffset: 2 }, 80, 30, mockDeps);
 		const header = result[0];
-		const footer = result[result.length - 1];
 		expect(header).toContain("\u25B22");
-		expect(footer).toContain("\u25BC2");
+		expect(header).toContain("\u25BC2");
 	});
 
 	it("hides widget when zero tasks", () => {

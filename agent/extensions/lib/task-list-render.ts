@@ -42,7 +42,7 @@ export function ensureTaskVisible(selectedIndex: number, scrollOffset: number, m
 // ── Height adaptation ────────────────────────────────────────────────
 
 export function computeHeightMode(taskCount: number, availableHeight: number): HeightMode {
-	const chrome = 2; // top border + bottom border
+	const chrome = 1; // header only
 	const visible = Math.min(taskCount, MAX_VISIBLE_TASKS);
 
 	const oneLineHeight = visible + chrome;
@@ -115,17 +115,11 @@ export function renderTaskList(
 	const { truncateToWidth: trunc, fg } = deps;
 	const lines: string[] = [];
 
-	// ── Header border ──────────────────────────────────────────────
-	const headerLabel = ` Tasks (${taskList.remaining}/${taskList.total}) `;
-	const aboveSuffix = above ? ` ${above} ` : "";
-	const headerLabelLen = headerLabel.length;
-	const aboveSuffixLen = aboveSuffix.length;
-	const headerDashLen = Math.max(0, width - 3 - headerLabelLen - aboveSuffixLen - 2);
-	const headerLine = fg("dim", "\u2500".repeat(3))
-		+ fg("accent", headerLabel)
-		+ fg("dim", "\u2500".repeat(headerDashLen))
-		+ (above ? fg("muted", aboveSuffix) : "")
-		+ fg("dim", "\u2500".repeat(Math.min(2, Math.max(0, width - 3 - headerLabelLen - headerDashLen - aboveSuffixLen))));
+	// ── Header ────────────────────────────────────────────────────
+	const headerLabel = `  Tasks ${taskList.remaining}/${taskList.total}`;
+	const scrollRight = [above, below].filter(Boolean).join(" ");
+	const headerLine = fg("dim", headerLabel)
+		+ (scrollRight ? " ".repeat(Math.max(1, width - headerLabel.length - scrollRight.length - 2)) + fg("muted", scrollRight) + "  " : "");
 	lines.push(trunc(headerLine, width, ""));
 
 	// ── Task lines ─────────────────────────────────────────────────
@@ -152,25 +146,16 @@ export function renderTaskList(
 		const selMark = isSelected ? fg("accent", " \u2190sel") : "";
 		const selMarkLen = isSelected ? 5 : 0;
 
-		// Line 1: icon + #id + text
+		// Line: icon + id + text
 		const prefix = `  ${iconStr} `;
-		const idStr = fg("accent", `#${task.id}`);
-		const idLen = `#${task.id}`.length;
+		const idStr = fg("accent", `${task.id}`);
+		const idLen = `${task.id}`.length;
 		const prefixVisLen = 2 + 1 + 1; // "  " + icon(1) + " "
 		const maxTextLen = width - prefixVisLen - idLen - 1 - selMarkLen;
 		const taskText = fg(textColor, trunc(task.text, Math.max(0, maxTextLen), "\u2026"));
 
 		lines.push(trunc(prefix + idStr + " " + taskText + selMark, width, ""));
 	}
-
-	// ── Footer border ──────────────────────────────────────────────
-	const belowSuffix = below ? ` ${below} ` : "";
-	const belowSuffixLen = belowSuffix.length;
-	const footerDashLen = Math.max(0, width - belowSuffixLen - 2);
-	const footerLine = fg("dim", "\u2500".repeat(footerDashLen))
-		+ (below ? fg("muted", belowSuffix) : "")
-		+ fg("dim", "\u2500".repeat(Math.min(2, Math.max(0, width - footerDashLen - belowSuffixLen))));
-	lines.push(trunc(footerLine, width, ""));
 
 	return lines;
 }
