@@ -25,6 +25,7 @@ import * as path from "path";
 import { fileURLToPath } from "url";
 import { applyExtensionDefaults } from "./lib/themeMap.ts";
 import { statusButton } from "./lib/pipeline-render.ts";
+import { subagentTitle, renderSubagentWidget, parseSubName } from "./lib/subagent-render.ts";
 import { DEFAULT_SUBAGENT_MODEL } from "./lib/defaults.ts";
 import { cleanOldSessionFiles } from "./lib/subagent-cleanup.ts";
 
@@ -59,12 +60,14 @@ function killGracefully(proc: any, timeoutMs = 3000): Promise<void> {
 interface SubState {
 	id: number;
 	status: "running" | "done" | "error";
+	name: string;          // short role label, e.g. "SCOUT", "REVIEWER"
 	task: string;
 	textChunks: string[];
 	toolCount: number;
 	elapsed: number;
 	sessionFile: string;   // persistent JSONL session path — used by /subcont to resume
 	turnCount: number;     // increments each time /subcont continues this agent
+	summary?: string;      // pre-written summary shown in widget (no markdown)
 	proc?: any;            // active ChildProcess ref (for kill on /subrm)
 }
 
@@ -96,39 +99,13 @@ export default function (pi: ExtensionAPI) {
 				container.addChild(new DynamicBorder(borderFn));
 				const content = new Text("", 1, 0);
 				container.addChild(content);
-				container.addChild(new DynamicBorder(borderFn));
 
 				return {
 					render(width: number): string[] {
-						const lines: string[] = [];
-						const statusBtn = statusButton(state.status, "Subagent #" + state.id, theme);
+						const statusBtn = statusButton(state.status, subagentTitle(state), theme);
+						const result = renderSubagentWidget(state, width, theme, statusBtn);
 
-						const taskPreview = state.task.length > 40
-							? state.task.slice(0, 37) + "..."
-							: state.task;
-
-						const turnLabel = state.turnCount > 1
-							? theme.fg("dim", ` · Turn ${state.turnCount}`)
-							: "";
-
-						lines.push(
-							statusBtn +
-							turnLabel +
-							theme.fg("dim", `  ${taskPreview}`) +
-							theme.fg("dim", `  (${Math.round(state.elapsed / 1000)}s)`) +
-							theme.fg("dim", ` | Tools: ${state.toolCount}`)
-						);
-
-						const fullText = state.textChunks.join("");
-						const lastLine = fullText.split("\n").filter((l: string) => l.trim()).pop() || "";
-						if (lastLine) {
-							const trimmed = lastLine.length > width - 10
-								? lastLine.slice(0, width - 13) + "..."
-								: lastLine;
-							lines.push(theme.fg("muted", `  ${trimmed}`));
-						}
-
-						content.setText(lines.join("\n"));
+						content.setText(result.lines.join("\n"));
 						return container.render(width);
 					},
 					invalidate() {
@@ -222,13 +199,13 @@ export default function (pi: ExtensionAPI) {
 
 				const result = state.textChunks.join("");
 				ctx.ui.notify(
-					`Subagent #${state.id} ${state.status} in ${Math.round(state.elapsed / 1000)}s`,
+					`SA${state.id} (${state.name}) ${state.status} in ${Math.round(state.elapsed / 1000)}s`,
 					state.status === "done" ? "success" : "error"
 				);
 
 				pi.sendMessage({
 					customType: "subagent-result",
-					content: `Subagent #${state.id}${state.turnCount > 1 ? ` (Turn ${state.turnCount})` : ""} finished "${prompt}" in ${Math.round(state.elapsed / 1000)}s.\n\nResult:\n${result.slice(0, 8000)}${result.length > 8000 ? "\n\n... [truncated]" : ""}`,
+					content: `SA${state.id} (${state.name})${state.turnCount > 1 ? ` (Turn ${state.turnCount})` : ""} finished "${prompt}" in ${Math.round(state.elapsed / 1000)}s.\n\nResult:\n${result.slice(0, 8000)}${result.length > 8000 ? "\n\n... [truncated]" : ""}`,
 					display: true,
 				}, { deliverAs: "followUp", triggerTurn: true });
 
@@ -255,6 +232,8 @@ export default function (pi: ExtensionAPI) {
 		description: "Spawn a background subagent to perform a task. Returns the subagent ID immediately while it runs in the background. Results will be delivered as a follow-up message when finished.",
 		parameters: Type.Object({
 			task: Type.String({ description: "The complete task description for the subagent to perform" }),
+			name: Type.Optional(Type.String({ description: "Short role label (e.g. REVIEWER, SCOUT)" })),
+			summary: Type.Optional(Type.String({ description: "Short summary shown in widget (no markdown)" })),
 		}),
 		execute: async (callId, args, _signal, _onUpdate, ctx) => {
 			widgetCtx = ctx;
@@ -262,12 +241,14 @@ export default function (pi: ExtensionAPI) {
 			const state: SubState = {
 				id,
 				status: "running",
+				name: (args.name || "AGENT").toUpperCase(),
 				task: args.task,
 				textChunks: [],
 				toolCount: 0,
 				elapsed: 0,
 				sessionFile: makeSessionFile(id),
 				turnCount: 1,
+				summary: args.summary,
 			};
 			agents.set(id, state);
 			updateWidgets();
@@ -276,7 +257,7 @@ export default function (pi: ExtensionAPI) {
 			spawnAgent(state, args.task, ctx);
 
 			return {
-				content: [{ type: "text", text: `Subagent #${id} spawned and running in background.` }],
+				content: [{ type: "text", text: `SA${id} (${state.name}) spawned and running in background.` }],
 			};
 		},
 	});
@@ -292,10 +273,10 @@ export default function (pi: ExtensionAPI) {
 			widgetCtx = ctx;
 			const state = agents.get(args.id);
 			if (!state) {
-				return { content: [{ type: "text", text: `Error: No subagent #${args.id} found.` }] };
+				return { content: [{ type: "text", text: `Error: No SA${args.id} found.` }] };
 			}
 			if (state.status === "running") {
-				return { content: [{ type: "text", text: `Error: Subagent #${args.id} is still running.` }] };
+				return { content: [{ type: "text", text: `Error: SA${args.id} is still running.` }] };
 			}
 
 			state.status = "running";
@@ -305,11 +286,11 @@ export default function (pi: ExtensionAPI) {
 			state.turnCount++;
 			updateWidgets();
 
-			ctx.ui.notify(`Continuing Subagent #${args.id} (Turn ${state.turnCount})…`, "info");
+			ctx.ui.notify(`Continuing SA${args.id} (${state.name}) Turn ${state.turnCount}…`, "info");
 			spawnAgent(state, args.prompt, ctx);
 
 			return {
-				content: [{ type: "text", text: `Subagent #${args.id} continuing conversation in background.` }],
+				content: [{ type: "text", text: `SA${args.id} (${state.name}) continuing conversation in background.` }],
 			};
 		},
 	});
@@ -324,7 +305,7 @@ export default function (pi: ExtensionAPI) {
 			widgetCtx = ctx;
 			const state = agents.get(args.id);
 			if (!state) {
-				return { content: [{ type: "text", text: `Error: No subagent #${args.id} found.` }] };
+				return { content: [{ type: "text", text: `Error: No SA${args.id} found.` }] };
 			}
 
 			if (state.proc && state.status === "running") {
@@ -334,7 +315,7 @@ export default function (pi: ExtensionAPI) {
 			agents.delete(args.id);
 
 			return {
-				content: [{ type: "text", text: `Subagent #${args.id} removed successfully.` }],
+				content: [{ type: "text", text: `SA${args.id} removed.` }],
 			};
 		},
 	});
@@ -348,8 +329,8 @@ export default function (pi: ExtensionAPI) {
 				return { content: [{ type: "text", text: "No active subagents." }] };
 			}
 
-			const list = Array.from(agents.values()).map(s => 
-				`#${s.id} [${s.status.toUpperCase()}] (Turn ${s.turnCount}) - ${s.task}`
+			const list = Array.from(agents.values()).map(s =>
+				`SA${s.id} [${s.status.toUpperCase()}] ${s.name} - ${s.task}`
 			).join("\n");
 
 			return {
@@ -367,9 +348,15 @@ export default function (pi: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			widgetCtx = ctx;
 
-			const task = args?.trim();
-			if (!task) {
-				ctx.ui.notify("Usage: /sub <task>", "error");
+			const raw = args?.trim();
+			if (!raw) {
+				ctx.ui.notify("Usage: /sub [NAME] <task>", "error");
+				return;
+			}
+
+			const parsed = parseSubName(raw);
+			if (!parsed.task) {
+				ctx.ui.notify("Usage: /sub [NAME] <task>", "error");
 				return;
 			}
 
@@ -377,7 +364,8 @@ export default function (pi: ExtensionAPI) {
 			const state: SubState = {
 				id,
 				status: "running",
-				task,
+				name: parsed.name,
+				task: parsed.task,
 				textChunks: [],
 				toolCount: 0,
 				elapsed: 0,
@@ -388,7 +376,7 @@ export default function (pi: ExtensionAPI) {
 			updateWidgets();
 
 			// Fire-and-forget
-			spawnAgent(state, task, ctx);
+			spawnAgent(state, parsed.task, ctx);
 		},
 	});
 
@@ -416,12 +404,12 @@ export default function (pi: ExtensionAPI) {
 
 			const state = agents.get(num);
 			if (!state) {
-				ctx.ui.notify(`No subagent #${num} found. Use /sub to create one.`, "error");
+				ctx.ui.notify(`No SA${num} found. Use /sub to create one.`, "error");
 				return;
 			}
 
 			if (state.status === "running") {
-				ctx.ui.notify(`Subagent #${num} is still running — wait for it to finish first.`, "warning");
+				ctx.ui.notify(`SA${num} is still running — wait for it to finish first.`, "warning");
 				return;
 			}
 
@@ -433,7 +421,7 @@ export default function (pi: ExtensionAPI) {
 			state.turnCount++;
 			updateWidgets();
 
-			ctx.ui.notify(`Continuing Subagent #${num} (Turn ${state.turnCount})…`, "info");
+			ctx.ui.notify(`Continuing SA${num} (${state.name}) Turn ${state.turnCount}…`, "info");
 
 			// Fire-and-forget — reuses the same sessionFile for conversation history
 			spawnAgent(state, prompt, ctx);
@@ -455,16 +443,16 @@ export default function (pi: ExtensionAPI) {
 
 			const state = agents.get(num);
 			if (!state) {
-				ctx.ui.notify(`No subagent #${num} found.`, "error");
+				ctx.ui.notify(`No SA${num} found.`, "error");
 				return;
 			}
 
 			// Kill the process if still running
 			if (state.proc && state.status === "running") {
 				await killGracefully(state.proc);
-				ctx.ui.notify(`Subagent #${num} killed and removed.`, "warning");
+				ctx.ui.notify(`SA${num} killed and removed.`, "warning");
 			} else {
-				ctx.ui.notify(`Subagent #${num} removed.`, "info");
+				ctx.ui.notify(`SA${num} removed.`, "info");
 			}
 
 			ctx.ui.setWidget(`sub-${num}`, undefined);
