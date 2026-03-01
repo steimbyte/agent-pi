@@ -35,10 +35,10 @@ investigate-fix:
   steps:
     - agent: scout
       prompt: "Explore the codebase relevant to this bug report:\n\n$INPUT"
-    - agent: debugger
+    - agent: reviewer
       prompt: "Investigate this bug and propose a fix. Include reproduction steps and root cause.\n\nContext:\n$INPUT\n\nOriginal request: $ORIGINAL"
     - agent: builder
-      prompt: "Implement the proposed fix from the debugger. Apply the changes exactly as specified.\n\n$INPUT"
+      prompt: "Implement the proposed fix from the reviewer. Apply the changes exactly as specified.\n\n$INPUT"
     - agent: reviewer
       prompt: "Review this bug fix for correctness and completeness:\n\n$INPUT"
 
@@ -47,7 +47,7 @@ plan-review-plan:
   steps:
     - agent: planner
       prompt: "Create a detailed implementation plan for: $INPUT"
-    - agent: plan-reviewer
+    - agent: reviewer
       prompt: "Critically review this implementation plan. Challenge assumptions, find gaps, and suggest improvements:\n\n$INPUT\n\nOriginal request: $ORIGINAL"
     - agent: planner
       prompt: "Revise and improve your implementation plan based on this critique. Address every issue raised and incorporate the recommendations:\n\nOriginal request: $ORIGINAL\n\nCritique:\n$INPUT"
