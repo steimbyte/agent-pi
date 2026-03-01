@@ -11,6 +11,7 @@ import {
 	navExit,
 	navEnter,
 	renderTaskList,
+	stripLeadingNumber,
 	MAX_VISIBLE_TASKS,
 	type TaskListInfo,
 	type TaskListState,
@@ -23,6 +24,34 @@ const mockDeps: RenderDeps = {
 	truncateToWidth: (s, w, _suffix) => s.length <= w ? s : s.slice(0, w),
 	fg: (_color, text) => text,
 };
+
+// ── stripLeadingNumber ──────────────────────────────────────────────
+
+describe("stripLeadingNumber", () => {
+	it("strips '1. ' prefix", () => {
+		expect(stripLeadingNumber("1. Investigate git history")).toBe("Investigate git history");
+	});
+
+	it("strips '12. ' prefix", () => {
+		expect(stripLeadingNumber("12. Multi-digit task")).toBe("Multi-digit task");
+	});
+
+	it("strips '3) ' prefix", () => {
+		expect(stripLeadingNumber("3) Parenthesized task")).toBe("Parenthesized task");
+	});
+
+	it("does not strip when no number prefix", () => {
+		expect(stripLeadingNumber("Investigate git history")).toBe("Investigate git history");
+	});
+
+	it("does not strip bare number without separator", () => {
+		expect(stripLeadingNumber("42 tasks remaining")).toBe("42 tasks remaining");
+	});
+
+	it("handles empty string", () => {
+		expect(stripLeadingNumber("")).toBe("");
+	});
+});
 
 // ── ensureTaskVisible ───────────────────────────────────────────────
 
@@ -225,6 +254,22 @@ describe("renderTaskList", () => {
 		expect(joined).toContain(" 2 ");
 		expect(joined).toContain(" 3 ");
 		expect(joined).toContain("Task 1 description");
+	});
+
+	it("strips leading number prefix from task text to avoid duplication with id", () => {
+		const info: TaskListInfo = {
+			tasks: [
+				{ id: 1, text: "1. Investigate git history", status: "idle" },
+				{ id: 2, text: "2. Analyze changes", status: "idle" },
+			],
+			remaining: 2,
+			total: 2,
+		};
+		const result = renderTaskList(info, { selectedIndex: -1, scrollOffset: 0 }, 80, 20, mockDeps);
+		const joined = result.join("\n");
+		// Should NOT contain "1 1." — the id is shown once and the leading "1." is stripped from text
+		expect(joined).not.toMatch(/\b1 1\./);
+		expect(joined).toContain("1 Investigate git history");
 	});
 
 	it("shows status icons (* for inprogress, x for done, - for idle)", () => {

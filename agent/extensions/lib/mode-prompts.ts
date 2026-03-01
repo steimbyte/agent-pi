@@ -3,11 +3,11 @@
 
 /** Shared Commander integration section appended to mode prompts when Commander is available. */
 export function buildCommanderSection(): string {
-	return `\n## Commander Integration
-Commander is available. Use these tools when appropriate:
+	return `\n## Commander Integration (REQUIRED)
+Commander is connected. ALWAYS use these tools for dashboard visibility:
 - \`commander_session { operation: "file:open", file_path: <path> }\` — display key files in Commander's floating viewer
-- \`commander_task\` — track tasks in the Commander dashboard
-- \`commander_mailbox\` — broadcast status updates to the dashboard`;
+- \`commander_task\` — track tasks in the Commander dashboard (auto-synced from local tasks)
+- \`commander_mailbox\` — ALWAYS send status updates at task start and completion`;
 }
 
 /** Options for building the NORMAL mode prompt. */
@@ -28,7 +28,8 @@ export function buildNormalPrompt(opts: NormalPromptOpts): string {
 
 	const commanderSection = opts.commanderAvailable
 		? buildCommanderSection()
-		: "";
+		: `\n## Commander Integration
+Commander is offline. Tasks are tracked locally only. Commander tools will soft-fail silently.`;
 
 	return `You are in NORMAL mode. Classify the incoming task and select the best execution mode.
 
@@ -49,7 +50,7 @@ export function buildNormalPrompt(opts: NormalPromptOpts): string {
 2. If SIMPLE (read, answer, single edit) — work directly, do NOT call set_mode.
 3. Otherwise, call \`set_mode\` immediately with the best mode and include a \`reason\`.
    Explain your choice in your response — no need to ask for permission first.
-4. After calling set_mode, define your tasks with \`tasks new-list\` + \`tasks add\`.
+4. After calling set_mode, define your tasks with \`tasks new-list\` + \`tasks add\`${opts.commanderAvailable ? " (auto-synced to Commander). Send a \`commander_mailbox\` status update when starting work." : "."}
 
 ## Mode Availability
 - CHAIN: ${chainStatus}
@@ -89,10 +90,10 @@ export const PLAN_PROMPT = `You are in PLAN mode. Follow a plan-first workflow f
 - Never skip approval
 - Keep changes minimal and focused
 
-## Commander Integration (when available)
-- Display your plan: \`commander_session { operation: "file:open", file_path: ".context/todo.md" }\`
-- Track tasks externally: \`commander_task\` for cross-session tracking
-- Broadcast status: \`commander_mailbox\` for dashboard visibility
+## Commander Integration (ALWAYS use when connected)
+- ALWAYS display your plan: \`commander_session { operation: "file:open", file_path: ".context/todo.md" }\`
+- ALWAYS track tasks: \`commander_task\` for cross-session tracking
+- ALWAYS broadcast status: \`commander_mailbox\` at plan start, approval, and completion
 `;
 
 /** Context-os spec-driven workflow: Q&A → spec → Commander → implement. */
@@ -131,8 +132,9 @@ Existing Code to Leverage, Out of Scope
 Once approved, proceed with implementation.
 Optionally use /microtasks to break spec into executable tasks.
 
-## Commander Integration (use when available)
-- commander_spec: create/shape/write operations for tracking
-- commander_workflow template:get contextos: get structured templates
-- commander_session file:open: display spec files in Commander UI
+## Commander Integration (ALWAYS use when connected)
+- ALWAYS use commander_spec: create/shape/write operations for tracking
+- ALWAYS use commander_workflow template:get contextos: get structured templates
+- ALWAYS use commander_session file:open: display spec files in Commander UI
+- ALWAYS use commander_mailbox: send status at spec creation, shaping, and approval
 `;

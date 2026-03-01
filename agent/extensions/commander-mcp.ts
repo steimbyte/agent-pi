@@ -4,6 +4,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { McpClient } from "./lib/mcp-client.ts";
+import { createReadyGate, resolveGate, resetGate } from "./lib/commander-ready.ts";
 
 // ── Configuration ───────────────────────────────────────────────────
 
@@ -257,6 +258,27 @@ export default function (pi: ExtensionAPI) {
 	const g = globalThis as any;
 	let healthCheckTimer: ReturnType<typeof setInterval> | undefined;
 
+	// ── Ready gate — queues ops until probe resolves ────────────────
+	const gate = createReadyGate();
+	g.__piCommanderGate = gate;
+	g.__piCommanderOnReady = g.__piCommanderOnReady || [];
+
+	// Helper: drain queued ops after gate resolves to available
+	function drainGateQueue(ops: { fn: (client: any) => Promise<void>; label: string }[]): void {
+		for (const op of ops) {
+			op.fn(client).catch(() => {});
+		}
+	}
+
+	// Helper: drain onReady callbacks registered by other extensions
+	function drainOnReadyCallbacks(): void {
+		const cbs: Array<() => void> = g.__piCommanderOnReady || [];
+		g.__piCommanderOnReady = [];
+		for (const cb of cbs) {
+			try { cb(); } catch {}
+		}
+	}
+
 	// Helper: ensure connected before calling
 	async function ensureConnected(): Promise<void> {
 		if (!client.isConnected()) {
@@ -304,6 +326,11 @@ export default function (pi: ExtensionAPI) {
 			g.__piCommanderClient = client;
 			ctx.ui.setStatus("Commander: connected", "commander");
 
+			// Resolve gate — drain any ops queued while we were probing
+			const queued = resolveGate(gate, true);
+			drainGateQueue(queued);
+			drainOnReadyCallbacks();
+
 			// Periodic health check (60s)
 			healthCheckTimer = setInterval(async () => {
 				try {
@@ -315,15 +342,26 @@ export default function (pi: ExtensionAPI) {
 						g.__piCommanderAvailable = true;
 						g.__piCommanderClient = client;
 						ctx.ui.setStatus("Commander: connected", "commander");
+						// Recovery — resolve gate if it was reset during offline
+						if (gate.state !== "available") {
+							const queued = resolveGate(gate, true);
+							drainGateQueue(queued);
+							drainOnReadyCallbacks();
+						}
 					}
 				} catch {
 					g.__piCommanderAvailable = false;
 					ctx.ui.setStatus("Commander: offline", "commander");
+					// Reset gate so ops queue again until recovery
+					if (gate.state === "available") {
+						resetGate(gate);
+					}
 				}
 			}, 60_000);
 		} catch {
 			g.__piCommanderAvailable = false;
 			ctx.ui.setStatus("Commander: offline", "commander");
+			resolveGate(gate, false);
 		}
 	}
 
@@ -333,6 +371,7 @@ export default function (pi: ExtensionAPI) {
 			healthCheckTimer = undefined;
 		}
 		g.__piCommanderAvailable = false;
+		resetGate(gate);
 		client.disconnect();
 	});
 }

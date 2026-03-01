@@ -36,7 +36,7 @@ function loadArt(): string {
 	return DEFAULT_ART;
 }
 
-function showBanner(ctx: ExtensionContext) {
+export function showBanner(ctx: ExtensionContext) {
 	if (!ctx.hasUI) return;
 
 	const art = loadArt();
@@ -58,18 +58,25 @@ function showBanner(ctx: ExtensionContext) {
 	);
 }
 
-export default function (pi: ExtensionAPI) {
-	let bannerCtx: ExtensionContext | null = null;
+let bannerCtx: ExtensionContext | null = null;
+let bannerVisible = false;
 
+export function isBannerVisible(): boolean {
+	return bannerVisible;
+}
+
+export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx: ExtensionContext) => {
 		applyExtensionDefaults(import.meta.url, ctx);
 		bannerCtx = ctx;
+		bannerVisible = true;
 		showBanner(ctx);
 	});
 
 	// Show banner when switching to a new session (/new)
 	pi.on("session_switch", async (_event, ctx: ExtensionContext) => {
 		bannerCtx = ctx;
+		bannerVisible = true;
 		showBanner(ctx);
 	});
 
@@ -77,6 +84,7 @@ export default function (pi: ExtensionAPI) {
 	pi.on("input", async () => {
 		if (bannerCtx?.hasUI) {
 			bannerCtx.ui.setWidget("agent-banner", undefined);
+			bannerVisible = false;
 		}
 	});
 }

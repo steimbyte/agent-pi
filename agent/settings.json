@@ -10,6 +10,7 @@
   "steeringMode": "one-at-a-time",
   "packages": [
     "extensions/agent-banner.ts",
+    "extensions/mode-cycler.ts",
     "extensions/agent-chain.ts",
     "extensions/agent-team.ts",
     "extensions/pipeline-team.ts",
@@ -19,9 +20,18 @@
     "extensions/theme-cycler.ts",
     "extensions/tasks.ts",
     "extensions/commander-mcp.ts",
+    "extensions/commander-tracker.ts",
     "extensions/toolkit-commands.ts",
     "extensions/user-question.ts",
     "extensions/agent-nav.ts",
     "extensions/footer.ts"
-  ]
+  ],
+  "editorPaddingX": 2,
+  "showHardwareCursor": true,
+  "terminal": {
+    "clearOnShrink": false
+  },
+  "followUpMode": "one-at-a-time",
+  "collapseChangelog": false,
+  "doubleEscapeAction": "tree"
 }

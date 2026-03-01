@@ -12,6 +12,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { truncateToWidth } from "@mariozechner/pi-tui";
 import { basename, dirname } from "node:path";
 import { applyExtensionDefaults } from "./lib/themeMap.ts";
+import { shouldBlockForCompaction } from "./lib/context-gate.ts";
 
 /** Turn a model name like "Claude 4 Opus" into "opus 4" */
 function shortModelName(name: string | undefined): string {
@@ -62,6 +63,27 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		applyExtensionDefaults(import.meta.url, ctx);
 		setupFooter(ctx, (unsub) => { branchUnsub = unsub; });
+	});
+
+	// ── Context compaction gate ──────────────────────────────────────
+	pi.on("tool_call", async (_event, ctx) => {
+		if (process.env.PI_SUBAGENT === "1") return { block: false };
+		const usage = ctx.getContextUsage();
+		const result = shouldBlockForCompaction(usage?.percent);
+		if (result.block) return { block: true, reason: result.reason };
+		return { block: false };
+	});
+
+	let warnedThisTurn = false;
+	pi.on("before_agent_start", async (_event, ctx) => {
+		const usage = ctx.getContextUsage();
+		const result = shouldBlockForCompaction(usage?.percent);
+		if (result.level === "warn" && !warnedThisTurn) {
+			warnedThisTurn = true;
+			ctx.ui.notify(`Context at ${Math.round(usage!.percent)}% — consider running /compact soon`, "warning");
+		}
+		if (result.level !== "warn") warnedThisTurn = false;
+		return {};
 	});
 
 	pi.on("session_shutdown", async () => {

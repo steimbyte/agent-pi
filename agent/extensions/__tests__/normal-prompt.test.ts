@@ -60,6 +60,25 @@ describe("buildNormalPrompt", () => {
 	});
 });
 
+describe("buildCommanderSection — Commander-first enforcement", () => {
+	it("contains 'ALWAYS' to enforce Commander-first usage", () => {
+		expect(buildCommanderSection()).toContain("ALWAYS");
+	});
+});
+
+describe("buildNormalPrompt — Commander task guidance", () => {
+	it("with commanderAvailable: true, mentions commander_mailbox in task guidance", () => {
+		const result = buildNormalPrompt({ commanderAvailable: true, activeChain: null, activePipeline: null });
+		expect(result).toContain("commander_mailbox");
+	});
+
+	it("with commanderAvailable: false, includes Commander-offline note", () => {
+		const result = buildNormalPrompt({ commanderAvailable: false, activeChain: null, activePipeline: null });
+		expect(result.toLowerCase()).toContain("commander");
+		expect(result.toLowerCase()).toContain("offline");
+	});
+});
+
 describe("buildCommanderSection", () => {
 	it("returns a non-empty string", () => {
 		const result = buildCommanderSection();

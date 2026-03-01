@@ -35,6 +35,18 @@ describe("PLAN_PROMPT", () => {
 	});
 });
 
+describe("PLAN_PROMPT — Commander-first enforcement", () => {
+	it("contains 'ALWAYS' for Commander usage", () => {
+		expect(PLAN_PROMPT).toContain("ALWAYS");
+	});
+});
+
+describe("SPEC_PROMPT — Commander-first enforcement", () => {
+	it("contains 'ALWAYS' for Commander usage", () => {
+		expect(SPEC_PROMPT).toContain("ALWAYS");
+	});
+});
+
 describe("SPEC_PROMPT", () => {
 	it("is a non-empty string", () => {
 		expect(typeof SPEC_PROMPT).toBe("string");

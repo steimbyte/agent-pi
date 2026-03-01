@@ -89,6 +89,14 @@ export function navEnter(state: TaskListState, totalTasks: number): TaskListStat
 	return { ...state, selectedIndex: 0 };
 }
 
+// ── Text helpers ─────────────────────────────────────────────────────
+
+/** Strip leading number prefix (e.g. "1. " or "3) ") from task text.
+ *  The widget already shows the task ID, so this avoids "1 1. Task". */
+export function stripLeadingNumber(text: string): string {
+	return text.replace(/^\d+[.)]\s+/, "");
+}
+
 // ── Rendering ────────────────────────────────────────────────────────
 // renderTaskList needs TUI functions, so it accepts them as parameters
 // to avoid a hard dependency on @mariozechner/pi-tui.
@@ -152,7 +160,8 @@ export function renderTaskList(
 		const idLen = `${task.id}`.length;
 		const prefixVisLen = 2 + 1 + 1; // "  " + icon(1) + " "
 		const maxTextLen = width - prefixVisLen - idLen - 1 - selMarkLen;
-		const taskText = fg(textColor, trunc(task.text, Math.max(0, maxTextLen), "\u2026"));
+		const displayText = stripLeadingNumber(task.text);
+		const taskText = fg(textColor, trunc(displayText, Math.max(0, maxTextLen), "\u2026"));
 
 		lines.push(trunc(prefix + idStr + " " + taskText + selMark, width, ""));
 	}

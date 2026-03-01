@@ -9,6 +9,7 @@ import {
 	matchesKey, truncateToWidth, visibleWidth,
 } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
+import { buildAskUserDetails, type AskUserDetails } from "./lib/ask-user-details.ts";
 import { applyExtensionDefaults } from "./lib/themeMap.ts";
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -168,6 +169,99 @@ class QuestionUI {
 	}
 }
 
+// ── ConfirmUI ─────────────────────────────────────────────────────────
+
+class ConfirmUI {
+	private selectedIndex = 0; // 0 = Yes, 1 = No
+
+	constructor(
+		private question: string,
+		private detail: string,
+		private onConfirm: (yes: boolean) => void,
+		private onCancel: () => void,
+	) {}
+
+	handleInput(data: string, tui: any): void {
+		if (matchesKey(data, Key.left)) {
+			this.selectedIndex = 0;
+		} else if (matchesKey(data, Key.right)) {
+			this.selectedIndex = 1;
+		} else if (matchesKey(data, Key.enter)) {
+			this.onConfirm(this.selectedIndex === 0);
+			return;
+		} else if (matchesKey(data, Key.escape)) {
+			this.onCancel();
+			return;
+		}
+		tui.requestRender();
+	}
+
+	render(width: number, height: number, theme: any): string[] {
+		const container = new Container();
+		const mdTheme = getPiMdTheme();
+
+		// Panel is 90% of terminal width, centered
+		const panelW = Math.max(40, Math.floor(width * 0.9));
+
+		// Header
+		container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+		container.addChild(new Text(
+			`${theme.fg("accent", theme.bold(" CONFIRM"))} ${theme.fg("dim", "|")} ${theme.fg("success", this.question)}`,
+			1, 0,
+		));
+		container.addChild(new Spacer(1));
+
+		// Body: full-width markdown rendering of detail text
+		if (this.detail) {
+			container.addChild(new Markdown(this.detail, 1, 0, mdTheme));
+			container.addChild(new Spacer(1));
+		}
+
+		// Footer options: Yes / No side by side
+		const labels = ["Yes", "No"];
+		const optParts = labels.map((label, i) => {
+			const selected = i === this.selectedIndex;
+			const indicator = selected ? theme.fg("accent", "▸ ") : "  ";
+			const text = selected
+				? theme.bold(theme.fg("accent", label))
+				: theme.fg("dim", label);
+			return " " + indicator + text + " ";
+		});
+		container.addChild(new Text(optParts.join("   "), 1, 0));
+
+		// Footer help
+		container.addChild(new Spacer(1));
+		container.addChild(new Text(
+			theme.fg("dim", " ←/→ Toggle • Enter Confirm • Esc Cancel"),
+			1, 0,
+		));
+		container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+
+		const panelLines = container.render(panelW);
+
+		// Dark backdrop: center the panel vertically and horizontally
+		const dimBg = "\x1b[48;2;10;10;15m";
+		const reset = "\x1b[0m";
+		const darkRow = dimBg + " ".repeat(width) + reset;
+		const padLeft = Math.max(0, Math.floor((width - panelW) / 2));
+		const padLeftStr = dimBg + " ".repeat(padLeft);
+		const padRightCount = Math.max(0, width - panelW - padLeft);
+		const padRightStr = " ".repeat(padRightCount) + reset;
+
+		const topPad = Math.max(1, Math.floor((height - panelLines.length) / 2));
+		const result: string[] = [];
+
+		for (let i = 0; i < topPad; i++) result.push(darkRow);
+		for (const line of panelLines) {
+			result.push(padLeftStr + line + padRightStr);
+		}
+		const bottomPad = Math.max(0, height - topPad - panelLines.length);
+		for (let i = 0; i < bottomPad; i++) result.push(darkRow);
+
+		return result;
+	}
+}
+
 // ── Tool Parameters ────────────────────────────────────────────────────
 
 const AskUserParams = Type.Object({
@@ -219,29 +313,107 @@ export default function (pi: ExtensionAPI) {
 					};
 				});
 
-				const answer = result ?? "[User cancelled]";
+				if (result == null) {
+					return {
+						content: [{ type: "text" as const, text: "[User cancelled]" }],
+						details: buildAskUserDetails({ mode, question, cancelled: true }),
+					};
+				}
+				const opt = options.find((o) => o.label === result);
 				return {
-					content: [{ type: "text" as const, text: `User selected: ${answer}` }],
+					content: [{ type: "text" as const, text: `User selected: ${result}` }],
+					details: buildAskUserDetails({
+						mode, question, answer: result,
+						selectedMarkdown: opt?.markdown,
+					}),
 				};
 			}
 
 			if (mode === "input") {
 				const answer = await ctx.ui.input(question, placeholder || "");
+				if (!answer) {
+					return {
+						content: [{ type: "text" as const, text: "[User cancelled]" }],
+						details: buildAskUserDetails({ mode, question, cancelled: true }),
+					};
+				}
 				return {
-					content: [{ type: "text" as const, text: answer ? `User answered: ${answer}` : "[User cancelled]" }],
+					content: [{ type: "text" as const, text: `User answered: ${answer}` }],
+					details: buildAskUserDetails({ mode, question, answer }),
 				};
 			}
 
 			if (mode === "confirm") {
-				const confirmed = await ctx.ui.confirm(question, detail || "", { timeout: 60000 });
+				const confirmed = await ctx.ui.custom((tui, theme, _kb, done) => {
+					const ui = new ConfirmUI(
+						question,
+						detail || "",
+						(yes) => done(yes),
+						() => done(false),
+					);
+					return {
+						render: (w) => ui.render(w, process.stdout.rows || 24, theme),
+						handleInput: (data) => ui.handleInput(data, tui),
+						invalidate: () => {},
+					};
+				});
 				return {
 					content: [{ type: "text" as const, text: confirmed ? "User confirmed: Yes" : "User declined: No" }],
+					details: buildAskUserDetails({ mode, question, answer: confirmed ? "Yes" : "No" }),
 				};
 			}
 
 			return {
 				content: [{ type: "text" as const, text: `Error: unknown mode '${mode}'` }],
 			};
+		},
+
+		renderCall(args, theme) {
+			let text = theme.fg("toolTitle", theme.bold("ask_user "));
+			text += theme.fg("muted", args.mode || "");
+			text += theme.fg("dim", `  "${args.question}"`);
+			if (args.mode === "select" && args.options?.length) {
+				text += theme.fg("dim", `  ${args.options.length} options`);
+			}
+			return new Text(text, 0, 0);
+		},
+
+		renderResult(result, { expanded }, theme) {
+			const details = result.details as AskUserDetails | undefined;
+			if (!details) {
+				const text = result.content[0];
+				return new Text(text?.type === "text" ? text.text : "", 0, 0);
+			}
+
+			if (details.cancelled) {
+				return new Text(theme.fg("dim", "[Cancelled]"), 0, 0);
+			}
+
+			if (details.mode === "confirm") {
+				const color = details.answer === "Yes" ? "success" : "warning";
+				const label = details.answer === "Yes" ? "Confirmed" : "Declined";
+				return new Text(theme.fg(color, label), 0, 0);
+			}
+
+			// select or input
+			const summary = details.mode === "select"
+				? `Selected: ${details.answer}`
+				: `Answer: ${details.answer}`;
+
+			if (expanded && details.selectedMarkdown) {
+				// Show summary + markdown preview as plain text lines
+				const preview = details.selectedMarkdown
+					.split("\n")
+					.slice(0, 8)
+					.map((l) => theme.fg("muted", "  " + l))
+					.join("\n");
+				return new Text(
+					theme.fg("accent", summary) + "\n" + preview,
+					0, 0,
+				);
+			}
+
+			return new Text(theme.fg("accent", summary), 0, 0);
 		},
 	});
 

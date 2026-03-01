@@ -473,11 +473,12 @@ export default function (pi: ExtensionAPI) {
 
 		// Resolve tools — append commander tools when Commander is available
 		const g = globalThis as any;
-		const commanderAvailable = !!(g.__piCommanderAvailable && g.__piCommanderClient);
+		const commanderAvailable = g.__piCommanderGate?.state === "available" && !!g.__piCommanderClient;
 
-		// Commander lifecycle: fire-and-forget helper (mirrors tasks.ts pattern)
+		// Commander lifecycle: gate-aware fire-and-forget helper
 		function commanderSync(fn: (client: any) => Promise<void>): void {
-			if (!g.__piCommanderAvailable || !g.__piCommanderClient) return;
+			const gate = g.__piCommanderGate;
+			if (!gate || gate.state !== "available" || !g.__piCommanderClient) return;
 			fn(g.__piCommanderClient).catch(() => {});
 		}
 
@@ -1155,7 +1156,7 @@ On FAILURE:
 
 		const teamMembers = Array.from(agentStates.values()).map(s => displayName(s.def.name)).join(", ");
 
-		const commanderAvailable = !!(globalThis as any).__piCommanderAvailable;
+		const commanderAvailable = (globalThis as any).__piCommanderGate?.state === "available";
 		const commanderSection = commanderAvailable ? `
 
 ## Commander Integration

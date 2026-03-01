@@ -41,6 +41,7 @@ export const THEME_MAP: Record<string, string> = {
 	"tool-counter":       "midnight-ocean",
 	"tool-counter-widget":"midnight-ocean",
 	"footer":             "midnight-ocean",
+	"mode-cycler":        "midnight-ocean",
 	"user-question":      "midnight-ocean",
 };
 
