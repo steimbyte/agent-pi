@@ -22,10 +22,10 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import {
-	Box, Text, Container, Spacer,
+	Box, Text, Container, Spacer, Markdown,
 	matchesKey, Key, truncateToWidth, visibleWidth,
 } from "@mariozechner/pi-tui";
-import { DynamicBorder } from "@mariozechner/pi-coding-agent";
+import { DynamicBorder, getMarkdownTheme as getPiMdTheme } from "@mariozechner/pi-coding-agent";
 import { spawn } from "child_process";
 import { readFileSync, existsSync, readdirSync, mkdirSync, unlinkSync } from "fs";
 import { join, resolve, basename, dirname } from "path";
@@ -777,7 +777,11 @@ export default function (pi: ExtensionAPI) {
 				const output = details.fullOutput.length > 4000
 					? details.fullOutput.slice(0, 4000) + "\n... [truncated]"
 					: details.fullOutput;
-				return new Text(outputLine(theme, bar, header) + "\n" + theme.fg("muted", output), 0, 0);
+				const mdTheme = getPiMdTheme();
+				const container = new Container();
+				container.addChild(new Text(outputLine(theme, bar, header), 0, 0));
+				container.addChild(new Markdown(output, 2, 0, mdTheme));
+				return container;
 			}
 
 			return new Text(outputLine(theme, bar, header), 0, 0);

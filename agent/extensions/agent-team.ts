@@ -758,7 +758,11 @@ export default function (pi: ExtensionAPI) {
 				const output = details.fullOutput.length > 4000
 					? details.fullOutput.slice(0, 4000) + "\n... [truncated]"
 					: details.fullOutput;
-				return new Text(outputLine(theme, bar, header) + "\n" + theme.fg("muted", output), 0, 0);
+				const mdTheme = getPiMdTheme();
+				const container = new Container();
+				container.addChild(new Text(outputLine(theme, bar, header), 0, 0));
+				container.addChild(new Markdown(output, 2, 0, mdTheme));
+				return container;
 			}
 
 			return new Text(outputLine(theme, bar, header), 0, 0);
