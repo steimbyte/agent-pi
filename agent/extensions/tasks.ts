@@ -43,6 +43,10 @@ import {
 	applyGroupCreateResult,
 	type SyncState,
 } from "./lib/commander-sync.ts";
+import { shouldConfirmNewList } from "./lib/tasks-confirm.ts";
+import { stripLeadingNumber } from "./lib/task-list-render.ts";
+import { enqueueOrExecute } from "./lib/commander-ready.ts";
+import { addRetry } from "./lib/commander-tracker.ts";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -169,11 +173,12 @@ class TasksListComponent {
 						? th.fg("accent", STATUS_ICON.inprogress)
 						: th.fg("dim", STATUS_ICON.idle);
 				const id = th.fg("accent", `#${task.id}`);
+				const displayText = stripLeadingNumber(task.text);
 				const text = task.status === "done"
-					? th.fg("dim", task.text)
+					? th.fg("dim", displayText)
 					: task.status === "inprogress"
-						? th.fg("success", task.text)
-						: th.fg("muted", task.text);
+						? th.fg("success", displayText)
+						: th.fg("muted", displayText);
 				lines.push(truncateToWidth(`  ${icon} ${id} ${text}`, width));
 			}
 		}
@@ -203,12 +208,22 @@ export default function (pi: ExtensionAPI) {
 	let nudgedThisCycle = false;
 	let syncState: SyncState = emptySyncState();
 
-	// ── Commander sync (fire-and-forget) ────────────────────────────────
+	// ── Commander sync (gate-aware) ─────────────────────────────────────
 
-	function syncFireAndForget(fn: (client: any) => Promise<void>): void {
+	function syncToCommander(label: string, fn: (client: any) => Promise<void>): void {
 		const g = globalThis as any;
-		if (!g.__piCommanderAvailable || !g.__piCommanderClient) return;
-		fn(g.__piCommanderClient).catch(() => {});
+		const gate = g.__piCommanderGate;
+		if (!gate) return; // commander-mcp not loaded
+		const wrappedFn = async (client: any) => {
+			try { await fn(client); }
+			catch {
+				const tracker = g.__piCommanderTracker;
+				if (tracker?._state) {
+					tracker._state = addRetry(tracker._state, label, fn);
+				}
+			}
+		};
+		enqueueOrExecute(gate, { fn: wrappedFn, label }, g.__piCommanderClient);
 	}
 
 	// ── Snapshot for details ───────────────────────────────────────────
@@ -230,7 +245,7 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	const refreshUI = (ctx: ExtensionContext) => {
-		const syncIndicator = (globalThis as any).__piCommanderAvailable ? "(synced)" : "(local)";
+		const syncIndicator = (globalThis as any).__piCommanderGate?.state === "available" ? "(synced)" : "(local)";
 		if (tasks.length === 0) {
 			ctx.ui.setStatus(`Tasks: none ${syncIndicator}`, "tasks");
 		} else {
@@ -370,8 +385,8 @@ export default function (pi: ExtensionAPI) {
 						};
 					}
 
-					// If a list already exists, confirm before replacing
-					if (tasks.length > 0 || listTitle) {
+					// Only confirm if incomplete tasks exist; finished lists clear silently
+					if (shouldConfirmNewList(tasks, listTitle)) {
 						const confirmed = await ctx.ui.confirm(
 							"Start a new list?",
 							`This will replace${listTitle ? ` "${listTitle}"` : " the current list"} (${tasks.length} task(s)). Continue?`,
@@ -387,7 +402,7 @@ export default function (pi: ExtensionAPI) {
 
 					// Cancel any previously synced tasks before resetting
 					if (syncState.mappings.length > 0) {
-						syncFireAndForget(async (client) => {
+						syncToCommander("cancel-old-list", async (client) => {
 							for (const m of syncState.mappings) {
 								await client.callTool("commander_task", { operation: "update", task_id: m.commanderId, status: "cancelled" });
 							}
@@ -456,7 +471,7 @@ export default function (pi: ExtensionAPI) {
 								added.map((t) => t.text),
 								process.cwd(),
 							);
-							syncFireAndForget(async (client) => {
+							syncToCommander("group-create", async (client) => {
 								const res = await client.callTool("commander_task", payload);
 								const parsed = parseGroupCreateResult(res);
 								if (parsed) {
@@ -468,7 +483,7 @@ export default function (pi: ExtensionAPI) {
 						} else if (syncState.groupId !== undefined) {
 							// Path B: group exists — add individual tasks with group_id
 							for (const t of added) {
-								syncFireAndForget(async (client) => {
+								syncToCommander("task-create", async (client) => {
 									const res = await client.callTool("commander_task", {
 										operation: "create",
 										description: t.text,
@@ -530,7 +545,7 @@ export default function (pi: ExtensionAPI) {
 
 					// Sync: update Commander task status (skip if external sync owns it)
 					if (!isExternalSyncActive()) {
-						syncFireAndForget(async (client) => {
+						syncToCommander("task-toggle", async (client) => {
 							const cid = lookupMapping(syncState, task.id);
 							if (cid === undefined) return;
 							await client.callTool("commander_task", {
@@ -541,7 +556,7 @@ export default function (pi: ExtensionAPI) {
 						});
 						// Sync demoted tasks back to pending
 						for (const d of demoted) {
-							syncFireAndForget(async (client) => {
+							syncToCommander("task-demote", async (client) => {
 								const cid = lookupMapping(syncState, d.id);
 								if (cid === undefined) return;
 								await client.callTool("commander_task", {
@@ -582,7 +597,7 @@ export default function (pi: ExtensionAPI) {
 
 					// Sync: cancel Commander task (skip if external sync owns it)
 					if (!isExternalSyncActive()) {
-						syncFireAndForget(async (client) => {
+						syncToCommander("task-remove", async (client) => {
 							const cid = lookupMapping(syncState, removed.id);
 							if (cid === undefined) return;
 							await client.callTool("commander_task", {
@@ -633,7 +648,7 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				case "clear": {
-					if (tasks.length > 0) {
+					if (shouldConfirmNewList(tasks, listTitle)) {
 						const confirmed = await ctx.ui.confirm(
 							"Clear task list?",
 							`This will remove all ${tasks.length} task(s)${listTitle ? ` from "${listTitle}"` : ""}. Continue?`,
@@ -651,7 +666,7 @@ export default function (pi: ExtensionAPI) {
 
 					// Sync: cancel all mapped Commander tasks (skip if external sync owns it)
 					if (!isExternalSyncActive() && syncState.mappings.length > 0) {
-						syncFireAndForget(async (client) => {
+						syncToCommander("cancel-all", async (client) => {
 							for (const m of syncState.mappings) {
 								await client.callTool("commander_task", {
 									operation: "update",
@@ -730,11 +745,12 @@ export default function (pi: ExtensionAPI) {
 							: t.status === "inprogress"
 								? theme.fg("accent", STATUS_ICON.inprogress)
 								: theme.fg("dim", STATUS_ICON.idle);
+						const itemDisplayText = stripLeadingNumber(t.text);
 						const itemText = t.status === "done"
-							? theme.fg("dim", t.text)
+							? theme.fg("dim", itemDisplayText)
 							: t.status === "inprogress"
-								? theme.fg("success", t.text)
-								: theme.fg("muted", t.text);
+								? theme.fg("success", itemDisplayText)
+								: theme.fg("muted", itemDisplayText);
 						listText += `\n${icon} ${theme.fg("accent", `#${t.id}`)} ${itemText}`;
 					}
 					if (!expanded && taskList.length > 5) {
