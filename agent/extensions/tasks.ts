@@ -567,6 +567,7 @@ export default function (pi: ExtensionAPI) {
 										status: localToCommander(task.status),
 									});
 									syncState = updateMappingStatus(syncState, task.id, task.status);
+									msg += ` (Commander #${cid} → ${localToCommander(task.status)})`;
 								} catch {
 									// Direct sync failed — queue for retry
 									syncToCommander("task-toggle-retry", async (c) => {
@@ -577,7 +578,10 @@ export default function (pi: ExtensionAPI) {
 										});
 										syncState = updateMappingStatus(syncState, task.id, task.status);
 									});
+									msg += ` (Commander sync failed — queued for retry)`;
 								}
+							} else {
+								msg += ` (Commander: no mapping for task #${task.id})`;
 							}
 
 							// On completion: verify all tasks are synced
