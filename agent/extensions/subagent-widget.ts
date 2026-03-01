@@ -24,6 +24,7 @@ import * as os from "os";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import { applyExtensionDefaults } from "./lib/themeMap.ts";
+import { outputBox, type BarColor } from "./lib/output-box.ts";
 import { statusButton } from "./lib/pipeline-render.ts";
 import { subagentTitle, renderSubagentWidget, parseSubName } from "./lib/subagent-render.ts";
 import { DEFAULT_SUBAGENT_MODEL } from "./lib/defaults.ts";
@@ -111,11 +112,8 @@ export default function (pi: ExtensionAPI) {
 			const key = `sub-${id}`;
 			widgetCtx.ui.setWidget(key, (_tui: any, theme: any) => {
 				const container = new Container();
-				const borderFn = (s: string) => theme.fg("dim", s);
-
-				container.addChild(new Text("", 0, 0)); // top margin
-				container.addChild(new DynamicBorder(borderFn));
 				const content = new Text("", 1, 0);
+				container.addChild(new Text("", 0, 0)); // top margin
 				container.addChild(content);
 
 				return {
@@ -123,7 +121,10 @@ export default function (pi: ExtensionAPI) {
 						const statusBtn = statusButton(state.status, subagentTitle(state), theme);
 						const result = renderSubagentWidget(state, width, theme, statusBtn);
 
-						content.setText(result.lines.join("\n"));
+						const barColor: BarColor = state.status === "done" ? "success"
+							: state.status === "error" ? "error" : "accent";
+						const boxed = outputBox(theme, barColor, result.lines);
+						content.setText(boxed.join("\n"));
 						return container.render(width);
 					},
 					invalidate() {

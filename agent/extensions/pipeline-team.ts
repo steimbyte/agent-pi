@@ -31,6 +31,7 @@ import { readFileSync, existsSync, readdirSync, mkdirSync, unlinkSync } from "fs
 import { join, resolve, basename, dirname } from "path";
 import { fileURLToPath } from "url";
 import { applyExtensionDefaults } from "./lib/themeMap.ts";
+import { outputLine, outputBox, type BarColor } from "./lib/output-box.ts";
 import { renderVerticalTimeline, renderCollapsedTimeline, statusButton } from "./lib/pipeline-render.ts";
 import { DEFAULT_SUBAGENT_MODEL } from "./lib/defaults.ts";
 import { parsePipelineYaml, type PhaseAgentDef, type PhaseDef, type PipelineConfig } from "./lib/parse-pipeline-yaml.ts";
@@ -280,9 +281,14 @@ export default function (pi: ExtensionAPI) {
 						})),
 					}));
 
-					const outputLines = widgetCollapsed
+					const rawLines = widgetCollapsed
 						? renderCollapsedTimeline(renderPhases, currentPhaseIndex, activeConfig!.name, width, theme)
 						: renderVerticalTimeline(renderPhases, currentPhaseIndex, width, theme);
+
+					const allDone = phaseStates.every(p => p.status === "done");
+					const hasError = phaseStates.some(p => p.status === "error");
+					const barColor: BarColor = hasError ? "error" : allDone ? "success" : "accent";
+					const outputLines = outputBox(theme, barColor, rawLines);
 
 					text.setText(outputLines.join("\n"));
 					return text.render(width);
@@ -646,17 +652,16 @@ export default function (pi: ExtensionAPI) {
 		renderCall(args, theme) {
 			const summary = (args as any).summary || "";
 			const preview = summary.length > 60 ? summary.slice(0, 57) + "..." : summary;
-			return new Text(
+			const text =
 				theme.fg("toolTitle", theme.bold("advance_phase ")) +
-				theme.fg("muted", preview),
-				0, 0,
-			);
+				theme.fg("muted", preview);
+			return new Text(outputLine(theme, "accent", text), 0, 0);
 		},
 
 		renderResult(result, _options, theme) {
 			const text = result.content[0];
 			const msg = text?.type === "text" ? text.text : "";
-			return new Text(theme.fg("success", msg), 0, 0);
+			return new Text(outputLine(theme, "success", theme.fg("success", msg)), 0, 0);
 		},
 	});
 
@@ -740,13 +745,12 @@ export default function (pi: ExtensionAPI) {
 		renderCall(args, theme) {
 			const agents = (args as any).agents || [];
 			const roles = agents.map((a: any) => a.role).join(", ");
-			return new Text(
+			const text =
 				theme.fg("toolTitle", theme.bold("dispatch_agents ")) +
 				theme.fg("accent", `${agents.length} agent(s)`) +
 				theme.fg("dim", " — ") +
-				theme.fg("muted", roles),
-				0, 0,
-			);
+				theme.fg("muted", roles);
+			return new Text(outputLine(theme, "accent", text), 0, 0);
 		},
 
 		renderResult(result, options, theme) {
@@ -758,14 +762,13 @@ export default function (pi: ExtensionAPI) {
 
 			if (options.isPartial || details.status === "dispatching") {
 				const runningBtn = statusButton("active", details.phase || "?", theme);
-				return new Text(
-					runningBtn +
-					theme.fg("dim", ` dispatching ${(details.agents || []).length} agents...`),
-					0, 0,
-				);
+				const content = runningBtn +
+					theme.fg("dim", ` dispatching ${(details.agents || []).length} agents...`);
+				return new Text(outputLine(theme, "accent", content), 0, 0);
 			}
 
 			const status = details.status === "done" ? "done" : "error";
+			const bar = status === "done" ? "success" : "error";
 			const statusBtn = statusButton(status, details.phase, theme);
 			const header = statusBtn +
 				theme.fg("dim", ` ${(details.agents || []).length} agents`);
@@ -774,10 +777,10 @@ export default function (pi: ExtensionAPI) {
 				const output = details.fullOutput.length > 4000
 					? details.fullOutput.slice(0, 4000) + "\n... [truncated]"
 					: details.fullOutput;
-				return new Text(header + "\n" + theme.fg("muted", output), 0, 0);
+				return new Text(outputLine(theme, bar, header) + "\n" + theme.fg("muted", output), 0, 0);
 			}
 
-			return new Text(header, 0, 0);
+			return new Text(outputLine(theme, bar, header), 0, 0);
 		},
 	});
 
@@ -817,12 +820,13 @@ export default function (pi: ExtensionAPI) {
 		},
 
 		renderCall(_args, theme) {
-			return new Text(theme.fg("toolTitle", theme.bold("pipeline_status")), 0, 0);
+			return new Text(outputLine(theme, "accent", theme.fg("toolTitle", theme.bold("pipeline_status"))), 0, 0);
 		},
 
 		renderResult(result, _options, theme) {
 			const text = result.content[0];
-			return new Text(text?.type === "text" ? text.text : "", 0, 0);
+			const msg = text?.type === "text" ? text.text : "";
+			return new Text(outputLine(theme, "accent", msg), 0, 0);
 		},
 	});
 

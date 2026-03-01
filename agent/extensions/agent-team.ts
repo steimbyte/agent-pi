@@ -29,6 +29,7 @@ import { readdirSync, readFileSync, existsSync, mkdirSync, unlinkSync } from "fs
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { applyExtensionDefaults } from "./lib/themeMap.ts";
+import { outputLine } from "./lib/output-box.ts";
 import { statusButton } from "./lib/pipeline-render.ts";
 import { DEFAULT_SUBAGENT_MODEL } from "./lib/defaults.ts";
 import { padRight, wordWrap, sideBySide } from "./lib/ui-helpers.ts";
@@ -725,7 +726,7 @@ export default function (pi: ExtensionAPI) {
 
 		renderCall(args, theme) {
 			return new Text(
-				theme.fg("dim", "dispatching:"),
+				outputLine(theme, "accent", theme.fg("dim", "dispatching:")),
 				0, 0,
 			);
 		},
@@ -742,13 +743,11 @@ export default function (pi: ExtensionAPI) {
 			// Streaming/partial result while agent is still running
 			if (options.isPartial || details.status === "dispatching") {
 				const runningBtn = statusButton("running", (details.agent || "?") + modelSuffix, theme, false);
-				return new Text(
-					runningBtn,
-					0, 0,
-				);
+				return new Text(outputLine(theme, "accent", runningBtn), 0, 0);
 			}
 
 			const status = details.status === "done" ? "done" : "error";
+			const bar = status === "done" ? "success" : "error";
 			const agentLabel = (details.agent ?? "?") + modelSuffix;
 			const statusBtn = statusButton(status, agentLabel, theme, false);
 			const elapsed = typeof details.elapsed === "number" ? Math.round(details.elapsed / 1000) : 0;
@@ -759,10 +758,10 @@ export default function (pi: ExtensionAPI) {
 				const output = details.fullOutput.length > 4000
 					? details.fullOutput.slice(0, 4000) + "\n... [truncated]"
 					: details.fullOutput;
-				return new Text(header + "\n" + theme.fg("muted", output), 0, 0);
+				return new Text(outputLine(theme, bar, header) + "\n" + theme.fg("muted", output), 0, 0);
 			}
 
-			return new Text(header, 0, 0);
+			return new Text(outputLine(theme, bar, header), 0, 0);
 		},
 	});
 

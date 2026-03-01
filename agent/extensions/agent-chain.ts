@@ -32,6 +32,7 @@ import { readFileSync, existsSync, readdirSync, mkdirSync, unlinkSync, writeFile
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { applyExtensionDefaults } from "./lib/themeMap.ts";
+import { outputLine } from "./lib/output-box.ts";
 import { statusButton } from "./lib/pipeline-render.ts";
 import { DEFAULT_SUBAGENT_MODEL } from "./lib/defaults.ts";
 import { parseChainYaml, type ChainStep, type ChainDef } from "./lib/parse-chain-yaml.ts";
@@ -497,13 +498,12 @@ export default function (pi: ExtensionAPI) {
 		renderCall(args, theme) {
 			const task = (args as any).task || "";
 			const preview = task.length > 60 ? task.slice(0, 57) + "..." : task;
-			return new Text(
+			const text =
 				theme.fg("toolTitle", theme.bold("run_chain ")) +
 				theme.fg("accent", activeChain?.name || "?") +
 				theme.fg("dim", " — ") +
-				theme.fg("muted", preview),
-				0, 0,
-			);
+				theme.fg("muted", preview);
+			return new Text(outputLine(theme, "accent", text), 0, 0);
 		},
 
 		renderResult(result, options, theme) {
@@ -515,13 +515,11 @@ export default function (pi: ExtensionAPI) {
 
 			if (options.isPartial || details.status === "running") {
 				const runningBtn = statusButton("running", details.chain || "chain", theme);
-				return new Text(
-					runningBtn,
-					0, 0,
-				);
+				return new Text(outputLine(theme, "accent", runningBtn), 0, 0);
 			}
 
 			const status = details.status === "done" ? "done" : "error";
+			const bar = status === "done" ? "success" : "error";
 			const statusBtn = statusButton(status, details.chain, theme);
 			const elapsed = typeof details.elapsed === "number" ? Math.round(details.elapsed / 1000) : 0;
 			const header = statusBtn +
@@ -531,10 +529,10 @@ export default function (pi: ExtensionAPI) {
 				const output = details.fullOutput.length > 4000
 					? details.fullOutput.slice(0, 4000) + "\n... [truncated]"
 					: details.fullOutput;
-				return new Text(header + "\n" + theme.fg("muted", output), 0, 0);
+				return new Text(outputLine(theme, bar, header) + "\n" + theme.fg("muted", output), 0, 0);
 			}
 
-			return new Text(header, 0, 0);
+			return new Text(outputLine(theme, bar, header), 0, 0);
 		},
 	});
 

@@ -4,6 +4,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { Text } from "@mariozechner/pi-tui";
+import { outputLine } from "./lib/output-box.ts";
 import { applyExtensionDefaults } from "./lib/themeMap.ts";
 import { MODES, nextMode, modeLabel, modeTextAnsi, type Mode } from "./lib/mode-cycler-logic.ts";
 import { PLAN_PROMPT, SPEC_PROMPT, buildNormalPrompt } from "./lib/mode-prompts.ts";
@@ -155,18 +156,17 @@ export default function (pi: ExtensionAPI) {
 			const target = (args as any).mode || "?";
 			const reason = (args as any).reason || "";
 			const preview = reason.length > 50 ? reason.slice(0, 47) + "..." : reason;
-			return new Text(
+			const text =
 				theme.fg("toolTitle", theme.bold("set_mode ")) +
 				theme.fg("accent", target.toUpperCase()) +
-				(preview ? theme.fg("dim", " — ") + theme.fg("muted", preview) : ""),
-				0, 0,
-			);
+				(preview ? theme.fg("dim", " — ") + theme.fg("muted", preview) : "");
+			return new Text(outputLine(theme, "accent", text), 0, 0);
 		},
 
 		renderResult(result, _options, theme) {
 			const text = result.content[0];
 			const msg = text?.type === "text" ? text.text : "";
-			return new Text(theme.fg("success", msg), 0, 0);
+			return new Text(outputLine(theme, "success", theme.fg("success", msg)), 0, 0);
 		},
 	});
 

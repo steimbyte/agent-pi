@@ -25,6 +25,7 @@ import { StringEnum } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder } from "@mariozechner/pi-coding-agent";
 import { Container, matchesKey, Text, truncateToWidth } from "@mariozechner/pi-tui";
+import { outputLine } from "./lib/output-box.ts";
 import { Type } from "@sinclair/typebox";
 import { applyExtensionDefaults } from "./lib/themeMap.ts";
 import {
@@ -762,7 +763,7 @@ export default function (pi: ExtensionAPI) {
 			else if (args.text) text += ` ${theme.fg("dim", `"${args.text}"`)}`;
 			if (args.description) text += ` ${theme.fg("dim", `— ${args.description}`)}`;
 			if (args.id !== undefined) text += ` ${theme.fg("accent", `#${args.id}`)}`;
-			return new Text(text, 0, 0);
+			return new Text(outputLine(theme, "accent", text), 0, 0);
 		},
 
 		renderResult(result, { expanded }, theme) {
@@ -773,7 +774,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (details.error) {
-				return new Text(theme.fg("error", `Error: ${details.error}`), 0, 0);
+				return new Text(outputLine(theme, "error", theme.fg("error", `Error: ${details.error}`)), 0, 0);
 			}
 
 			const taskList = details.tasks;
@@ -784,11 +785,11 @@ export default function (pi: ExtensionAPI) {
 					if (details.listDescription) {
 						msg += theme.fg("dim", ` — ${details.listDescription}`);
 					}
-					return new Text(msg, 0, 0);
+					return new Text(outputLine(theme, "success", msg), 0, 0);
 				}
 
 				case "list": {
-					if (taskList.length === 0) return new Text(theme.fg("dim", "No tasks"), 0, 0);
+					if (taskList.length === 0) return new Text(outputLine(theme, "accent", theme.fg("dim", "No tasks")), 0, 0);
 
 					let listText = "";
 					if (details.listTitle) {
@@ -813,38 +814,38 @@ export default function (pi: ExtensionAPI) {
 					if (!expanded && taskList.length > 5) {
 						listText += `\n${theme.fg("dim", `... ${taskList.length - 5} more`)}`;
 					}
-					return new Text(listText, 0, 0);
+					return new Text(outputLine(theme, "accent", listText), 0, 0);
 				}
 
 				case "add": {
 					const text = result.content[0];
 					const msg = text?.type === "text" ? text.text : "";
-					return new Text(theme.fg("success", msg), 0, 0);
+					return new Text(outputLine(theme, "success", theme.fg("success", msg)), 0, 0);
 				}
 
 				case "toggle": {
 					const text = result.content[0];
 					const msg = text?.type === "text" ? text.text : "";
-					return new Text(theme.fg("accent", msg), 0, 0);
+					return new Text(outputLine(theme, "accent", theme.fg("accent", msg)), 0, 0);
 				}
 
 				case "remove": {
 					const text = result.content[0];
 					const msg = text?.type === "text" ? text.text : "";
-					return new Text(theme.fg("warning", msg), 0, 0);
+					return new Text(outputLine(theme, "warning", theme.fg("warning", msg)), 0, 0);
 				}
 
 				case "update": {
 					const text = result.content[0];
 					const msg = text?.type === "text" ? text.text : "";
-					return new Text(theme.fg("success", msg), 0, 0);
+					return new Text(outputLine(theme, "success", theme.fg("success", msg)), 0, 0);
 				}
 
 				case "clear":
-					return new Text(theme.fg("success", "Cleared all tasks"), 0, 0);
+					return new Text(outputLine(theme, "success", theme.fg("success", "Cleared all tasks")), 0, 0);
 
 				default:
-					return new Text(theme.fg("dim", "done"), 0, 0);
+					return new Text(outputLine(theme, "dim", theme.fg("dim", "done")), 0, 0);
 			}
 		},
 	});
