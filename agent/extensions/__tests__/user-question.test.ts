@@ -109,7 +109,7 @@ class QuestionUI {
 	}
 
 	render(width: number, height: number, theme: any): string[] {
-		const panelW = Math.max(40, Math.floor(width * 0.9));
+		const panelW = Math.min(width, Math.max(40, Math.floor(width * 0.9)));
 		const innerWidth = panelW - 2;
 		const leftW = Math.max(20, Math.floor(innerWidth * 0.3));
 
@@ -208,7 +208,7 @@ class ConfirmUI {
 
 	render(width: number, height: number, theme: any): string[] {
 		const lines: string[] = [];
-		const panelW = Math.max(40, Math.floor(width * 0.9));
+		const panelW = Math.min(width, Math.max(40, Math.floor(width * 0.9)));
 
 		// Header
 		lines.push("┌" + "─".repeat(Math.max(1, panelW - 2)) + "┐");
@@ -1294,6 +1294,48 @@ describe("ConfirmUI - Height Clamping", () => {
 		const ui = new ConfirmUI("OK?", "Some detail", vi.fn(), vi.fn());
 		const result = ui.render(80, 5, theme);
 		expect(result).toHaveLength(5);
+	});
+});
+
+// ── Narrow Terminal Width Tests ──────────────────────────────────────────
+
+describe("QuestionUI - Narrow Width (panelW > width)", () => {
+	const theme = { fg: (_c: string, s: string) => s, bold: (s: string) => s };
+
+	it("render at width=2 returns height lines without crashing", () => {
+		const options: OptionDef[] = [{ label: "A" }, { label: "B" }];
+		const ui = new QuestionUI("Q?", options, vi.fn(), vi.fn());
+		const result = ui.render(2, 10, theme);
+		expect(result).toHaveLength(10);
+	});
+
+	it("no line exceeds terminal width when width < 45", () => {
+		const options: OptionDef[] = [{ label: "Option A" }, { label: "Option B" }];
+		const ui = new QuestionUI("Pick one", options, vi.fn(), vi.fn());
+		const result = ui.render(20, 12, theme);
+		expect(result).toHaveLength(12);
+		for (const line of result) {
+			expect(visibleWidth(line)).toBeLessThanOrEqual(20);
+		}
+	});
+});
+
+describe("ConfirmUI - Narrow Width (panelW > width)", () => {
+	const theme = { fg: (_c: string, s: string) => s, bold: (s: string) => s };
+
+	it("render at width=2 returns height lines without crashing", () => {
+		const ui = new ConfirmUI("OK?", "detail", vi.fn(), vi.fn());
+		const result = ui.render(2, 10, theme);
+		expect(result).toHaveLength(10);
+	});
+
+	it("no line exceeds terminal width when width < 45", () => {
+		const ui = new ConfirmUI("Sure?", "Are you sure?", vi.fn(), vi.fn());
+		const result = ui.render(20, 12, theme);
+		expect(result).toHaveLength(12);
+		for (const line of result) {
+			expect(visibleWidth(line)).toBeLessThanOrEqual(20);
+		}
 	});
 });
 

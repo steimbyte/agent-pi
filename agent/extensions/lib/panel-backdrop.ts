@@ -1,6 +1,27 @@
 // ABOUTME: Panel backdrop utility for fullscreen overlay UIs
 // ABOUTME: Centers a panel vertically, fills dark background, and clamps output to terminal height
 
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1b\[[0-9;]*m/g;
+
+function visibleWidth(s: string): number {
+	return s.replace(ANSI_RE, "").length;
+}
+
+function truncateToVisible(s: string, maxWidth: number): string {
+	let vis = 0;
+	let result = "";
+	let inEsc = false;
+	for (const ch of s) {
+		if (ch === "\x1b") { inEsc = true; result += ch; continue; }
+		if (inEsc) { result += ch; if (/[A-Za-z]/.test(ch)) inEsc = false; continue; }
+		if (vis >= maxWidth) break;
+		result += ch;
+		vis++;
+	}
+	return result;
+}
+
 /**
  * Renders a panel centered on a dark backdrop, always returning exactly `height` lines.
  * Truncates panelLines if they exceed available space.
@@ -30,7 +51,11 @@ export function renderPanelBackdrop(
 
 	for (let i = 0; i < topPad; i++) result.push(darkRow);
 	for (const line of visible) {
-		result.push(padLeftStr + line + padRightStr);
+		let assembled = padLeftStr + line + padRightStr;
+		if (visibleWidth(assembled) > width) {
+			assembled = truncateToVisible(assembled, width);
+		}
+		result.push(assembled);
 	}
 	while (result.length < height) result.push(darkRow);
 

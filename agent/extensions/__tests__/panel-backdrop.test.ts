@@ -4,6 +4,10 @@
 import { describe, it, expect } from "vitest";
 import { renderPanelBackdrop } from "../lib/panel-backdrop.ts";
 
+function visibleWidth(s: string): number {
+	return s.replace(/\x1b\[[0-9;]*m/g, "").length;
+}
+
 describe("renderPanelBackdrop", () => {
 	it("returns exactly height lines when panel fits", () => {
 		const panelLines = ["line 1", "line 2", "line 3"];
@@ -80,5 +84,24 @@ describe("renderPanelBackdrop", () => {
 	it("handles empty panelLines", () => {
 		const result = renderPanelBackdrop([], 40, 80, 10);
 		expect(result).toHaveLength(10);
+	});
+
+	it("no line exceeds width when panelW > width", () => {
+		const panelLines = Array.from({ length: 5 }, (_, i) => "X".repeat(40));
+		// panelW=40 but width=10 — every assembled line must fit within 10
+		const result = renderPanelBackdrop(panelLines, 40, 10, 12);
+		expect(result).toHaveLength(12);
+		for (const line of result) {
+			expect(visibleWidth(line)).toBeLessThanOrEqual(10);
+		}
+	});
+
+	it("no line exceeds width=2", () => {
+		const panelLines = ["ABCDEF", "123456"];
+		const result = renderPanelBackdrop(panelLines, 40, 2, 6);
+		expect(result).toHaveLength(6);
+		for (const line of result) {
+			expect(visibleWidth(line)).toBeLessThanOrEqual(2);
+		}
 	});
 });

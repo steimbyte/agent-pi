@@ -94,7 +94,7 @@ class QuestionUI {
 		const mdTheme = getPiMdTheme();
 
 		// Panel is 90% of terminal width, centered
-		const panelW = Math.max(40, Math.floor(width * 0.9));
+		const panelW = Math.min(width, Math.max(40, Math.floor(width * 0.9)));
 
 		// Header
 		container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
@@ -218,7 +218,7 @@ class ConfirmUI {
 		const mdTheme = getPiMdTheme();
 
 		// Panel is 90% of terminal width, centered
-		const panelW = Math.max(40, Math.floor(width * 0.9));
+		const panelW = Math.min(width, Math.max(40, Math.floor(width * 0.9)));
 
 		// Header
 		container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
