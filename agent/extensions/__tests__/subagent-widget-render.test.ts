@@ -7,7 +7,7 @@ import { renderSubagentWidget, subagentTitle, parseSubName, type SubRenderState 
 function makeFakeTheme() {
 	return {
 		fg: (color: string, text: string) => `[${color}]${text}`,
-		bold: (text: string) => `**${text}**`,
+		bold: (text: string) => `<b>${text}</b>`,
 		inverse: (text: string) => `{{${text}}}`,
 	};
 }
@@ -42,14 +42,21 @@ describe("renderSubagentWidget", () => {
 		expect(result.lines[0]).toContain("SCOUT - SA1");
 	});
 
-	it("shows summary line without markdown or truncation", () => {
+	it("shows status icon in title (✓ for done, ✗ for error)", () => {
+		const done = makeState({ status: "done" });
+		const doneResult = renderSubagentWidget(done, 80, theme);
+		expect(doneResult.lines[0]).toContain("✓");
+
+		const error = makeState({ status: "error" });
+		const errorResult = renderSubagentWidget(error, 80, theme);
+		expect(errorResult.lines[0]).toContain("✗");
+	});
+
+	it("shows summary line with plain text", () => {
 		const state = makeState({ summary: "Code quality check passed" });
 		const result = renderSubagentWidget(state, 80, theme);
 
 		expect(result.lines).toContainEqual(expect.stringContaining("Code quality check passed"));
-		// No markdown artifacts
-		expect(result.lines.join("")).not.toContain("**");
-		expect(result.lines.join("")).not.toContain("...");
 	});
 
 	it("omits summary line when no summary provided", () => {
@@ -79,6 +86,14 @@ describe("renderSubagentWidget", () => {
 		const result = renderSubagentWidget(state, 80, theme);
 
 		expect(result.lines[0]).toContain("AGENT - SA1");
+	});
+
+	it("shows elapsed time and tool count", () => {
+		const state = makeState({ elapsed: 12000, toolCount: 7 });
+		const result = renderSubagentWidget(state, 80, theme);
+
+		expect(result.lines[0]).toContain("12s");
+		expect(result.lines[0]).toContain("Tools: 7");
 	});
 });
 

@@ -1,34 +1,27 @@
-# Mode Bar & Text Input Fixes
+# Sub-agent Widget Redesign
 
-## Problem
-1. Each mode (PLAN, SPEC, PIPELINE, TEAM, CHAIN) uses a different background color in the mode bar
-2. The task list (rendered inside agent-team widget) can appear between the mode bar and the text input
+**Goal:** Make the sub-agent widget a full-width box with the status color as the entire box background (accent/blue while running, green when done, red on error).
 
 ## Plan
 
-### Step 1: Unify mode bar colors to blue
-**File: `agent/extensions/lib/mode-cycler-logic.ts`**
-- Change all `MODE_COLORS` to `"accent"` (except NORMAL stays empty)
-- Change all `MODE_TEXT_ANSI` to `BOLD_WHITE` (except NORMAL stays empty)
+### 1. Update `subagent-widget.ts` — Use `Box` for full-width colored background
+- Import `Box` from `@mariozechner/pi-tui`
+- In `updateWidgets()`, replace the current `Container` + `Text` approach with a `Box` component
+- The `Box`'s `bgFn` will convert the status color (accent/success/error) from foreground to background ANSI using `theme.getFgAnsi()` with `38→48` replacement
+- The `Box` provides automatic full-width padding (every line padded to terminal width)
+- Use `paddingX=1, paddingY=0` for slight horizontal padding
 
-**File: `agent/extensions/mode-cycler.ts`**
-- Change all `ANSI_BG` values to `"\x1b[44m"` (blue) for all non-NORMAL modes
+### 2. Update `subagent-render.ts` — Adapt text colors for colored background
+- Since the background is now a vivid color, adjust text styling for readability
+- Use bold white text for the title/status instead of the current inverse pill
+- Use lighter colors for secondary text (task preview, elapsed time, tool count)
 
-### Step 2: Pin mode bar directly above text input
-**File: `agent/extensions/mode-cycler.ts`**
-- Export `refreshModeBlock` via `globalThis.__piRefreshModeBlock`
-- This function re-sets the mode-block widget to ensure it's the last `aboveEditor` widget (renders closest to editor)
+### 3. Update `subagent-widget.ts` widget render — Skip `outputBox` wrapper
+- `outputBox()` is currently a no-op pass-through, but remove its usage since the Box handles everything
 
-**File: `agent/extensions/agent-team.ts`**
-- At the end of `updateWidget()`, after `setWidget("agent-team", ...)`, call `globalThis.__piRefreshModeBlock?.()`
-- This ensures the mode bar always renders below the tasks (closer to editor)
+### 4. Update tests in `subagent-widget-render.test.ts`
+- Adjust any assertions that depend on the old rendering format
 
-### Step 3: Update tests
-**File: `agent/extensions/__tests__/mode-cycler-logic.test.ts`**
-- Update `modeColor` tests: all modes return `"accent"` (except NORMAL)
-- Update `modeTextAnsi` tests: all modes return `"\x1b[1;97m"` bold white (except NORMAL)
-
-### Step 4: Verify
-- [ ] Run mode-cycler-logic tests
-- [ ] Run all extension tests
-- [ ] Confirm no type errors
+### 5. Verify
+- Run existing tests: `npx vitest run agent/extensions/__tests__/subagent-widget-render.test.ts`
+- Visual confirmation by checking render output structure

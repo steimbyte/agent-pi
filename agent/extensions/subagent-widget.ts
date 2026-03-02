@@ -15,8 +15,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { DynamicBorder } from "@mariozechner/pi-coding-agent";
-import { Container, Text } from "@mariozechner/pi-tui";
+import { Box, Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 const { spawn } = require("child_process") as any;
 import * as fs from "fs";
@@ -24,9 +23,7 @@ import * as os from "os";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import { applyExtensionDefaults } from "./lib/themeMap.ts";
-import { outputBox, type BarColor } from "./lib/output-box.ts";
-import { statusButton } from "./lib/pipeline-render.ts";
-import { subagentTitle, renderSubagentWidget, parseSubName } from "./lib/subagent-render.ts";
+import { renderSubagentWidget, parseSubName } from "./lib/subagent-render.ts";
 import { DEFAULT_SUBAGENT_MODEL } from "./lib/defaults.ts";
 import { cleanOldSessionFiles } from "./lib/subagent-cleanup.ts";
 import { buildCommanderPrompt } from "./lib/commander-prompt.ts";
@@ -105,30 +102,47 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Widget rendering ──────────────────────────────────────────────────────
 
+	/** Convert a foreground ANSI escape to a background ANSI escape (38→48). */
+	function fgAnsiToBgAnsi(fgAnsi: string): string {
+		return fgAnsi.replace(/\x1b\[38;/g, "\x1b[48;");
+	}
+
 	function updateWidgets() {
 		if (!widgetCtx) return;
 
 		for (const [id, state] of Array.from(agents.entries())) {
 			const key = `sub-${id}`;
 			widgetCtx.ui.setWidget(key, (_tui: any, theme: any) => {
-				const container = new Container();
-				const content = new Text("", 1, 0);
-				container.addChild(new Text("", 0, 0)); // top margin
-				container.addChild(content);
+				// Pick the status color name for the background
+				const colorName = state.status === "done" ? "success"
+					: state.status === "error" ? "error" : "accent";
+
+				// Build a bgFn that paints the entire line with the status color background
+				const bgFn = (text: string): string => {
+					const bgAnsi = fgAnsiToBgAnsi(theme.getFgAnsi(colorName));
+					return `${bgAnsi}${text}\x1b[49m`;
+				};
+
+				const box = new Box(1, 0, bgFn);
+				const content = new Text("", 0, 0);
+				box.addChild(content);
 
 				return {
 					render(width: number): string[] {
-						const statusBtn = statusButton(state.status, subagentTitle(state), theme);
-						const result = renderSubagentWidget(state, width, theme, statusBtn);
-
-						const barColor: BarColor = state.status === "done" ? "success"
+						// Re-derive bgFn each render in case status changed
+						const curColor = state.status === "done" ? "success"
 							: state.status === "error" ? "error" : "accent";
-						const boxed = outputBox(theme, barColor, result.lines);
-						content.setText(boxed.join("\n"));
-						return container.render(width);
+						box.setBgFn((text: string): string => {
+							const bgAnsi = fgAnsiToBgAnsi(theme.getFgAnsi(curColor));
+							return `${bgAnsi}${text}\x1b[49m`;
+						});
+
+						const result = renderSubagentWidget(state, width, theme);
+						content.setText(result.lines.join("\n"));
+						return box.render(width);
 					},
 					invalidate() {
-						container.invalidate();
+						box.invalidate();
 					},
 				};
 			});

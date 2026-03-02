@@ -14,12 +14,15 @@ export interface SubRenderState {
 
 export interface SubRenderTheme {
 	fg: (color: string, text: string) => string;
+	bold: (text: string) => string;
 }
 
 export interface SubRenderResult {
 	lines: string[];
 	borderCount: number;
 }
+
+const BRAILLE_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 /**
  * Build the title label: "NAME - SA{id}"
@@ -30,37 +33,43 @@ export function subagentTitle(state: SubRenderState): string {
 
 /**
  * Render the content lines for a subagent widget.
- * statusBtn is the pre-rendered status button string.
+ * Designed for display on a full-width colored background box.
+ * Text uses bold white for title and light colors for details.
  * borderCount is always 1 (top divider only).
  */
 export function renderSubagentWidget(
 	state: SubRenderState,
 	width: number,
 	theme: SubRenderTheme,
-	statusBtn?: string,
 ): SubRenderResult {
 	const lines: string[] = [];
 
-	const btn = statusBtn ?? subagentTitle(state);
+	const title = subagentTitle(state);
+
+	// Animated spinner for running state
+	const spinner = state.status === "running"
+		? BRAILLE_FRAMES[Math.floor(Date.now() / 80) % BRAILLE_FRAMES.length] + " "
+		: state.status === "done" ? "✓ "
+		: "✗ ";
 
 	const taskPreview = state.task.length > 40
 		? state.task.slice(0, 37) + "..."
 		: state.task;
 
 	const turnLabel = state.turnCount > 1
-		? theme.fg("dim", ` · Turn ${state.turnCount}`)
+		? ` · Turn ${state.turnCount}`
 		: "";
 
 	lines.push(
-		btn +
+		theme.bold(spinner + title) +
 		turnLabel +
-		theme.fg("dim", `  ${taskPreview}`) +
-		theme.fg("dim", `  (${Math.round(state.elapsed / 1000)}s)`) +
-		theme.fg("dim", ` | Tools: ${state.toolCount}`)
+		`  ${taskPreview}` +
+		`  (${Math.round(state.elapsed / 1000)}s)` +
+		` | Tools: ${state.toolCount}`
 	);
 
 	if (state.summary) {
-		lines.push(theme.fg("muted", `  ${state.summary}`));
+		lines.push(`  ${state.summary}`);
 	}
 
 	return { lines, borderCount: 1 };
