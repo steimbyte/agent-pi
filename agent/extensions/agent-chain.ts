@@ -19,6 +19,7 @@
  * Commands:
  *   /chain             — switch active chain
  *   /chain-list        — list all available chains
+ *   /chain-clear       — clear chain widget from screen
  *
  * Usage: pi -e extensions/agent-chain.ts
  */
@@ -568,6 +569,24 @@ export default function (pi: ExtensionAPI) {
 				`Chain: ${chains[idx].name}\n${chains[idx].description}\n${flow}`,
 				"info",
 			);
+		},
+	});
+
+	pi.registerCommand("chain-clear", {
+		description: "Clear chain widget from screen",
+		handler: async (_args, ctx) => {
+			widgetCtx = ctx;
+			ctx.ui.setWidget("agent-chain", undefined);
+
+			// Reset step states to pending so the widget can reappear on next run
+			for (const s of stepStates) {
+				s.status = "pending";
+				s.elapsed = 0;
+				s.lastWork = "";
+			}
+			selectedStepIndex = -1;
+
+			ctx.ui.notify("Chain widget cleared.", "info");
 		},
 	});
 

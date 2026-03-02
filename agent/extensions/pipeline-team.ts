@@ -14,6 +14,7 @@
  *   /pipeline            — select pipeline config from YAML (opt-in activation)
  *   /pipeline-status     — full pipeline state notification
  *   /pipeline-reset      — reset pipeline to phase 1
+ *   /pipeline-clear      — clear pipeline widget from screen (keeps pipeline active)
  *   /pipeline-off       — deactivate pipeline and hide UI
  *
  * Usage: pi -e extensions/pipeline-team.ts
@@ -904,6 +905,28 @@ export default function (pi: ExtensionAPI) {
 			phaseStates = [];
 			clearPipelineUI();
 			ctx.ui.notify("Pipeline deactivated. Use /pipeline to select one.", "info");
+		},
+	});
+
+	pi.registerCommand("pipeline-clear", {
+		description: "Clear pipeline widget from screen (keeps pipeline active)",
+		handler: async (_args, ctx) => {
+			widgetCtx = ctx;
+			clearPipelineUI();
+
+			// Reset agent states within each phase so the widget can reappear on next dispatch
+			for (const ps of phaseStates) {
+				for (const agent of ps.agents) {
+					if (agent.status === "done" || agent.status === "error") {
+						agent.status = "idle";
+						agent.lastWork = "";
+						agent.output = "";
+						agent.elapsed = 0;
+					}
+				}
+			}
+
+			ctx.ui.notify("Pipeline widget cleared. Pipeline remains active.", "info");
 		},
 	});
 

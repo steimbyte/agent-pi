@@ -15,6 +15,7 @@
  *   /agents-team          — switch active team
  *   /agents-list          — list loaded agents
  *   /agents-grid N        — set column count (default 2)
+ *   /agents-clear         — clear agent team widget from screen
  *   Ctrl+G                — toggle compact/expanded widget view
  *
  * Usage: pi -e extensions/agent-team.ts -e extensions/footer.ts
@@ -843,8 +844,29 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ── Audit Command ──────────────────────────────
+	pi.registerCommand("agents-clear", {
+		description: "Clear agent team widget from screen",
+		handler: async (_args, ctx) => {
+			widgetCtx = ctx;
+			ctx.ui.setWidget("agent-team", undefined);
 
+			// Reset all agent states to idle so the widget can reappear on next dispatch
+			for (const state of agentStates.values()) {
+				if (state.status === "done" || state.status === "error") {
+					state.status = "idle";
+					state.task = "";
+					state.toolCount = 0;
+					state.elapsed = 0;
+					state.lastWork = "";
+					state.contextPct = 0;
+					state.resolvedModel = "";
+				}
+			}
+			selectedAgentIndex = -1;
+
+			ctx.ui.notify("Agent team widget cleared.", "info");
+		},
+	});
 
 	// ── Agent Detail Overlay ──────────────────────
 
