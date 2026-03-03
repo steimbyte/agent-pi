@@ -85,6 +85,7 @@ interface SubState {
 	proc?: any;            // active ChildProcess ref (for kill on /subrm)
 	commanderTaskId?: number;  // pre-assigned Commander task ID
 	autoRemove?: boolean;      // auto-remove widget ~30s after done (default: true)
+	model?: string;            // resolved model string for display
 }
 
 export default function (pi: ExtensionAPI) {
@@ -180,6 +181,7 @@ export default function (pi: ExtensionAPI) {
 		const model = ctx.model
 			? `${ctx.model.provider}/${ctx.model.id}`
 			: DEFAULT_SUBAGENT_MODEL;
+		state.model = model;
 
 		const extDir = path.dirname(fileURLToPath(import.meta.url));
 		const tasksExtPath = path.join(extDir, "tasks.ts");

@@ -98,6 +98,24 @@ describe("renderSubagentWidget", () => {
 		expect(result.lines[0]).toContain("12s");
 		expect(result.lines[0]).toContain("Tools: 7");
 	});
+
+	it("shows model as last component when present", () => {
+		const state = makeState({ model: "grok-4-fast" });
+		const result = renderSubagentWidget(state, 80, theme);
+
+		expect(result.lines[0]).toContain("| grok-4-fast");
+	});
+
+	it("omits model suffix when model is undefined", () => {
+		const state = makeState({ model: undefined });
+		const result = renderSubagentWidget(state, 80, theme);
+
+		// Should end with Tools count, no trailing pipe
+		const line = result.lines[0];
+		const toolsIdx = line.indexOf("Tools:");
+		const afterTools = line.slice(toolsIdx);
+		expect(afterTools).not.toContain("|");
+	});
 });
 
 describe("subagentTitle", () => {

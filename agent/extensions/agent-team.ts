@@ -300,6 +300,7 @@ export default function (pi: ExtensionAPI) {
 						elapsed: state.elapsed,
 						turnCount: state.runCount,
 						summary: state.summary,
+						model: state.resolvedModel || state.def.model || undefined,
 					};
 					const result = renderSubagentWidget(renderState, width, theme);
 					content.setText(result.lines.join("\n"));
@@ -725,21 +726,40 @@ export default function (pi: ExtensionAPI) {
 				return new Text(text?.type === "text" ? text.text : "", 0, 0);
 			}
 
-			const modelSuffix = details.model ? ` | ${details.model}` : "";
+			// Map status to subagent-style render state
+			const mapStatus = (s: string): "running" | "done" | "error" => {
+				if (s === "done") return "done";
+				if (s === "dispatching") return "running";
+				if (s === "error") return "error";
+				return "running";
+			};
 
-			// Streaming/partial result while agent is still running
-			if (options.isPartial || details.status === "dispatching") {
-				const runningBtn = statusButton("running", (details.agent || "?") + modelSuffix, theme, false);
-				return new Text(outputLine(theme, "accent", runningBtn), 0, 0);
-			}
+			const renderState: import("./lib/subagent-render.ts").SubRenderState = {
+				id: 0,
+				status: mapStatus(details.status),
+				name: (details.agent || "?").toUpperCase(),
+				task: details.task || "",
+				toolCount: 0,
+				elapsed: typeof details.elapsed === "number" ? details.elapsed : 0,
+				turnCount: 1,
+				summary: details.task || undefined,
+				model: details.model || undefined,
+			};
 
-			const status = details.status === "done" ? "done" : "error";
-			const bar = status === "done" ? "success" : "error";
-			const agentLabel = (details.agent ?? "?") + modelSuffix;
-			const statusBtn = statusButton(status, agentLabel, theme, false);
-			const elapsed = typeof details.elapsed === "number" ? Math.round(details.elapsed / 1000) : 0;
-			const header = statusBtn +
-				theme.fg("dim", ` ${elapsed}s`);
+			// Determine background color based on status
+			const DISPATCH_BG: Record<string, string> = {
+				running: "\x1b[48;2;26;58;92m",
+				done:    "\x1b[48;2;35;50;55m",
+				error:   "\x1b[48;2;70;35;35m",
+			};
+			const bgFn = (text: string): string => {
+				const bg = DISPATCH_BG[renderState.status] || DISPATCH_BG.running;
+				return `${bg}${WHITE_BOLD}${text}${RESET_ALL}${RESET_BG}`;
+			};
+
+			const box = new Box(1, 1, bgFn);
+			const content = new Text("", 0, 0);
+			box.addChild(content);
 
 			if (options.expanded && details.fullOutput) {
 				const output = details.fullOutput.length > 4000
@@ -747,12 +767,34 @@ export default function (pi: ExtensionAPI) {
 					: details.fullOutput;
 				const mdTheme = getPiMdTheme();
 				const container = new Container();
-				container.addChild(new Text(outputLine(theme, bar, header), 0, 0));
+
+				// Subagent-style box for the header
+				const headerBox = new Box(1, 1, bgFn);
+				const headerContent = new Text("", 0, 0);
+				headerBox.addChild(headerContent);
+				container.addChild({
+					render(width: number): string[] {
+						headerBox.setBgFn(bgFn);
+						const widgetResult = renderSubagentWidget(renderState, width, theme);
+						headerContent.setText(widgetResult.lines.join("\n"));
+						return headerBox.render(width);
+					},
+					invalidate() { headerBox.invalidate(); },
+				} as Component);
+
 				container.addChild(new Markdown(output, 2, 0, mdTheme));
 				return container;
 			}
 
-			return new Text(outputLine(theme, bar, header), 0, 0);
+			return {
+				render(width: number): string[] {
+					box.setBgFn(bgFn);
+					const widgetResult = renderSubagentWidget(renderState, width, theme);
+					content.setText(widgetResult.lines.join("\n"));
+					return box.render(width);
+				},
+				invalidate() { box.invalidate(); },
+			} as Component;
 		},
 	});
 

@@ -10,6 +10,7 @@ export interface SubRenderState {
 	elapsed: number;
 	turnCount: number;
 	summary?: string;
+	model?: string;
 }
 
 export interface SubRenderTheme {
@@ -56,12 +57,15 @@ export function renderSubagentWidget(
 		? ` · Turn ${state.turnCount}`
 		: "";
 
-	// Line 1: spinner + title + stats (summary shown on line 2)
+	const modelSuffix = state.model ? ` | ${state.model}` : "";
+
+	// Line 1: spinner + title + stats + model (summary shown on line 2)
 	lines.push(
 		theme.bold(spinner + title) +
 		turnLabel +
 		` | (${Math.round(state.elapsed / 1000)}s)` +
-		` | Tools: ${state.toolCount}`
+		` | Tools: ${state.toolCount}` +
+		modelSuffix
 	);
 
 	// Line 2: summary (current activity) or task preview as fallback
