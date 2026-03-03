@@ -1,5 +1,5 @@
 // ABOUTME: Tests for automatic compaction triggering from footer context-gate integration.
-// ABOUTME: Verifies warnings and command dispatch behavior around context thresholds.
+// ABOUTME: Verifies warnings, ctx.compact() calls, and auto-resume behavior around context thresholds.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -7,11 +7,20 @@ vi.mock("@mariozechner/pi-tui", () => ({
 	truncateToWidth: (s: string) => s,
 }));
 
+vi.mock("node:fs", () => ({
+	existsSync: vi.fn(() => false),
+	mkdirSync: vi.fn(),
+	readFileSync: vi.fn(() => ""),
+	writeFileSync: vi.fn(),
+	appendFileSync: vi.fn(),
+}));
+
 type TestContext = {
 	ui: { notify: ReturnType<typeof vi.fn> };
 	model: { name: string; provider?: string; id?: string };
 	cwd: string;
 	getContextUsage: () => { percent: number };
+	compact: ReturnType<typeof vi.fn>;
 };
 
 function createContext(overrides: { percent: number; ui?: ReturnType<typeof vi.fn> } = { percent: 75 }): TestContext {
@@ -22,6 +31,7 @@ function createContext(overrides: { percent: number; ui?: ReturnType<typeof vi.f
 		model: { name: "Claude Opus", provider: "anthropic", id: "claude" },
 		cwd: "/Users/ricardo/Projects/pi-vs-claude-code",
 		getContextUsage: () => ({ percent: overrides.percent }),
+		compact: vi.fn((opts: any) => { if (opts.onComplete) opts.onComplete(); }),
 	};
 }
 
@@ -45,9 +55,10 @@ describe("footer auto-compaction behavior", () => {
 	beforeEach(() => {
 		vi.resetModules();
 		delete process.env.PI_SUBAGENT;
+		delete (globalThis as any).__piAutoCompacting;
 	});
 
-	it("auto-runs /compact-min and blocks tool calls at BLOCK threshold", async () => {
+	it("blocks tool calls and triggers ctx.compact() at BLOCK threshold", async () => {
 		const { handlers, pi, sendMessage } = createExtension();
 		const extension = await import("../footer.ts");
 		extension.default(pi);
@@ -61,12 +72,26 @@ describe("footer auto-compaction behavior", () => {
 			reason:
 				"Context at 90% — approaching limit. Run /compact or /compact-min NOW to prevent context loss errors. Do NOT continue working until compaction is done.",
 		});
-		await tick();
-		expect(sendMessage).toHaveBeenCalledTimes(1);
-		expect(sendMessage).toHaveBeenCalledWith(
-			{ content: "/compact-min", display: true },
-			{ deliverAs: "user", triggerTurn: true },
+
+		// Should call ctx.compact() directly
+		expect(ctx.compact).toHaveBeenCalledTimes(1);
+		expect(ctx.compact).toHaveBeenCalledWith(
+			expect.objectContaining({
+				customInstructions: expect.any(String),
+				onComplete: expect.any(Function),
+				onError: expect.any(Function),
+			}),
 		);
+
+		// Since mock auto-calls onComplete, resume message should be sent
+		expect(sendMessage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				customType: "auto-compact-resume",
+				content: expect.stringContaining("Continue where you left off"),
+			}),
+			{ deliverAs: "followUp", triggerTurn: true },
+		);
+
 		expect(notify).toHaveBeenCalledWith(expect.stringContaining("Auto-Compaction Started"), "warning");
 	});
 
@@ -82,28 +107,44 @@ describe("footer auto-compaction behavior", () => {
 		expect(sendMessage).not.toHaveBeenCalled();
 	});
 
-	it("reports compact-complete and sends auto-continue message when context recovers", async () => {
+	it("sends resume message with restored context on compaction complete", async () => {
 		const { handlers, pi, sendMessage } = createExtension();
 		const extension = await import("../footer.ts");
 		extension.default(pi);
 
 		const notify = vi.fn();
-		await handlers["tool_call"]("tool_call", createContext({ percent: 90, ui: notify }));
-		await tick();
-		expect(sendMessage).toHaveBeenCalledTimes(1);
+		const ctx = createContext({ percent: 90, ui: notify });
+		await handlers["tool_call"]("tool_call", ctx);
 
-		await handlers["before_agent_start"]("before_agent_start", createContext({ percent: 79, ui: notify }));
-		expect(notify).toHaveBeenCalledWith(expect.stringContaining("Auto-Compaction Complete"), "success");
-
-		// Should send auto-continue follow-up message
-		expect(sendMessage).toHaveBeenCalledTimes(2);
+		// Mock auto-calls onComplete, so resume is sent immediately
 		expect(sendMessage).toHaveBeenCalledWith(
 			expect.objectContaining({
 				customType: "auto-compact-resume",
-				content: expect.stringContaining("Continue where you left off"),
+				content: expect.stringContaining("compacted to free up space"),
 			}),
 			{ deliverAs: "followUp", triggerTurn: true },
 		);
+	});
+
+	it("sets and clears __piAutoCompacting flag during compact flow", async () => {
+		const { handlers, pi } = createExtension();
+		const extension = await import("../footer.ts");
+		extension.default(pi);
+
+		const ctx = createContext({ percent: 90 });
+		// Override compact to capture the flag state during execution
+		let flagDuringCompact: boolean | undefined;
+		ctx.compact = vi.fn((opts: any) => {
+			flagDuringCompact = (globalThis as any).__piAutoCompacting;
+			if (opts.onComplete) opts.onComplete();
+		});
+
+		await handlers["tool_call"]("tool_call", ctx);
+
+		// Flag should have been true during compact
+		expect(flagDuringCompact).toBe(true);
+		// Flag should be cleared after complete
+		expect((globalThis as any).__piAutoCompacting).toBe(false);
 	});
 
 	it("subagent blocks and auto-compacts at 80% threshold", async () => {
@@ -120,12 +161,9 @@ describe("footer auto-compaction behavior", () => {
 			block: true,
 			reason: expect.stringContaining("Context at 80%"),
 		});
-		await tick();
-		expect(sendMessage).toHaveBeenCalledTimes(1);
-		expect(sendMessage).toHaveBeenCalledWith(
-			{ content: "/compact-min", display: true },
-			{ deliverAs: "user", triggerTurn: true },
-		);
+
+		// Should call ctx.compact() directly
+		expect(ctx.compact).toHaveBeenCalledTimes(1);
 	});
 
 	it("subagent does not block below 80% threshold", async () => {
@@ -143,21 +181,17 @@ describe("footer auto-compaction behavior", () => {
 		expect(sendMessage).not.toHaveBeenCalled();
 	});
 
-	it("subagent auto-continues after compaction recovery", async () => {
+	it("subagent auto-continues after compaction", async () => {
 		process.env.PI_SUBAGENT = "1";
 		const { handlers, pi, sendMessage } = createExtension();
 		const extension = await import("../footer.ts");
 		extension.default(pi);
 
 		const notify = vi.fn();
-		// Trigger compaction at 80%
-		await handlers["tool_call"]("tool_call", createContext({ percent: 80, ui: notify }));
-		await tick();
-		expect(sendMessage).toHaveBeenCalledTimes(1);
+		const ctx = createContext({ percent: 80, ui: notify });
+		await handlers["tool_call"]("tool_call", ctx);
 
-		// Context recovers
-		await handlers["before_agent_start"]("before_agent_start", createContext({ percent: 50, ui: notify }));
-		expect(notify).toHaveBeenCalledWith(expect.stringContaining("Auto-Compaction Complete"), "success");
+		// Since mock auto-calls onComplete, resume should already be sent
 		expect(sendMessage).toHaveBeenCalledWith(
 			expect.objectContaining({
 				customType: "auto-compact-resume",

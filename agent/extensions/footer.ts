@@ -8,7 +8,8 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { truncateToWidth } from "@mariozechner/pi-tui";
 import { basename, dirname } from "node:path";
 import { applyExtensionDefaults } from "./lib/themeMap.ts";
-import { shouldBlockForCompaction, COMPACT_THRESHOLD, BLOCK_THRESHOLD } from "./lib/context-gate.ts";
+import { shouldBlockForCompaction, COMPACT_THRESHOLD } from "./lib/context-gate.ts";
+import { readSessionState, readRecentLogs, buildRestorationContent } from "./lib/memory-cycle-helpers.ts";
 
 /** Subagents compact earlier since no human can intervene if they hit the wall. */
 const SUBAGENT_BLOCK_THRESHOLD = COMPACT_THRESHOLD; // 80%
@@ -51,8 +52,6 @@ let compactState: CompactState = {
 
 const AUTO_COMPACT_COOLDOWN_MS = 10_000;
 const REQUEST_TTL_MS = 90_000;
-const RECOVERY_TARGET_PERCENT = COMPACT_THRESHOLD - 1;
-const AUTO_COMPACT_COMMANDS = ["/compact-min", "/compact"] as const;
 
 function padRight(value: string, width: number): string {
 	return value.length >= width ? value.slice(0, width) : `${value}${" ".repeat(width - value.length)}`;
@@ -91,79 +90,95 @@ function requestAutoCompact(ctx: ExtensionContext, pi: ExtensionAPI): void {
 		lastNoticeAt: now,
 	};
 
+	// Signal to memory-cycle.ts that auto-compaction is handling the resume
+	(globalThis as any).__piAutoCompacting = true;
+
 	ctx.ui.notify(
 		compactBox("Auto-Compaction Started", [
-			`Usage at ${Math.round(usage.percent)}% reached block threshold.`,
-			`Launching compact flow before context-sensitive work resumes.`,
+			`Usage at ${Math.round(usage.percent)}% — triggering native compaction.`,
+			`Memory will be saved automatically via session_before_compact hook.`,
 			...connectionInfo(ctx, usage.percent),
 		]),
 		"warning",
 	);
 
-	void (async () => {
-		for (const cmd of AUTO_COMPACT_COMMANDS) {
-			try {
-				await pi.sendMessage(
-					{ content: cmd, display: true },
-					{ deliverAs: "user", triggerTurn: true },
-				);
-				return;
-			} catch {
-				// Try fallback command.
-			}
-		}
+	// Use pi's native ctx.compact() instead of sending /compact as user message.
+	// This triggers the actual compaction pipeline (summarize → reclaim tokens)
+	// and our session_before_compact hook in memory-cycle.ts saves artifacts.
+	ctx.compact({
+		customInstructions: "Preserve all goals, decisions, progress, file changes, and context needed to continue work seamlessly.",
+		onComplete: () => {
+			const postUsage = ctx.getContextUsage();
+			const postPercent = postUsage?.percent ? Math.round(postUsage.percent) : 0;
+			compactState.status = "done";
+			compactState.lastNoticeAt = Date.now();
 
-		compactState.status = "failed";
-		compactState.lastNoticeAt = Date.now();
-		ctx.ui.notify(
-			compactBox("Auto-Compaction", [
-				"Auto-compaction command unavailable.",
-				"Please run /compact manually to continue.",
-				...connectionInfo(ctx, usage.percent),
-			]),
-			"error",
-		);
-	})();
+			ctx.ui.notify(
+				compactBox("Auto-Compaction Complete", [
+					`Recovered context usage to ${postPercent}%.`,
+					"Memory saved. Resuming work automatically.",
+					...connectionInfo(ctx, postPercent),
+				]),
+				"success",
+			);
+
+			// Build rich resume message with restored session state
+			const sessionState = readSessionState(ctx.cwd);
+			const parts = buildRestorationContent(sessionState);
+			const recentLogs = readRecentLogs();
+			if (recentLogs) parts.push("", recentLogs);
+
+			const resumeContent = [
+				"Auto-compaction complete — context recovered.",
+				"",
+				...parts,
+				"",
+				"Continue where you left off. Resume the task you were working on before compaction. Do NOT ask the user what to do — just keep working.",
+			].join("\n");
+
+			// Clear auto-compaction flag
+			(globalThis as any).__piAutoCompacting = false;
+
+			// Nudge the agent to continue working with full restored context
+			pi.sendMessage(
+				{
+					customType: "auto-compact-resume",
+					content: resumeContent,
+					display: false,
+				},
+				{ deliverAs: "followUp", triggerTurn: true },
+			);
+		},
+		onError: (err) => {
+			(globalThis as any).__piAutoCompacting = false;
+			compactState.status = "failed";
+			compactState.lastNoticeAt = Date.now();
+			ctx.ui.notify(
+				compactBox("Auto-Compaction Failed", [
+					`Error: ${err.message}`,
+					"Please run /compact manually.",
+					...connectionInfo(ctx),
+				]),
+				"error",
+			);
+		},
+	});
 }
 
-function finalizeCompactStatus(ctx: ExtensionContext, pi: ExtensionAPI): void {
+function finalizeCompactStatus(ctx: ExtensionContext, _pi: ExtensionAPI): void {
 	if (compactState.status !== "requested") return;
-	const usage = ctx.getContextUsage();
-	if (!usage?.percent) return;
 
-	const percent = Math.round(usage.percent);
+	// Check for stale requests that never completed (safety valve)
 	const now = Date.now();
-	if (percent <= RECOVERY_TARGET_PERCENT) {
-		compactState.status = "done";
-		ctx.ui.notify(
-			compactBox("Auto-Compaction Complete", [
-				`Recovered context usage to ${percent}%.`,
-				"Automatically resuming work.",
-				...connectionInfo(ctx, percent),
-			]),
-			"success",
-		);
-		compactState.lastNoticeAt = now;
-
-		// Auto-continue: send a follow-up message so the agent picks up where it left off
-		pi.sendMessage(
-			{
-				customType: "auto-compact-resume",
-				content: "Auto-compaction complete — context recovered. Continue where you left off. Resume the task you were working on before compaction interrupted.",
-				display: true,
-			},
-			{ deliverAs: "followUp", triggerTurn: true },
-		);
-		return;
-	}
-
 	if (now - compactState.startTime >= REQUEST_TTL_MS) {
+		const usage = ctx.getContextUsage();
+		const percent = usage?.percent ? Math.round(usage.percent) : 0;
 		compactState.status = "failed";
 		compactState.lastNoticeAt = now;
 		ctx.ui.notify(
-			compactBox("Auto-Compaction Caution", [
-				"Context remains high and compaction did not settle in time.",
-				"Please continue with /compact if needed.",
+			compactBox("Auto-Compaction Timeout", [
+				"Compaction did not complete in time.",
+				"Please run /compact manually if needed.",
 				...connectionInfo(ctx, percent),
 			]),
 			"error",

@@ -110,15 +110,25 @@ export default function (pi: ExtensionAPI) {
 	// ── Hook: session_compact ─────────────────────────────────────
 	// Fires AFTER compaction completes. We inject a memory-restore message
 	// so the agent knows what happened and can continue seamlessly.
+	// NOTE: During auto-compaction, footer.ts sends a richer resume message
+	// with the same session state. We only send here for manual /compact calls.
 	pi.on("session_compact", async (event, ctx) => {
 		const { compactionEntry } = event;
 
-		// Read recent logs and session state for context enrichment
+		// Skip if footer auto-compaction is handling the resume (avoid duplicate messages).
+		// Footer sets __piAutoCompacting during its compact flow.
+		if ((globalThis as any).__piAutoCompacting) {
+			ctx.ui.notify("Compaction complete — memory preserved", "success");
+			return;
+		}
+
+		// Manual compaction — send restoration context ourselves
 		const recentLogs = readRecentLogs();
 		const sessionState = readSessionState(preCompactCwd || ctx.cwd);
 
 		// Build restoration context
 		const parts = buildRestorationContent(sessionState);
+		if (recentLogs) parts.push("", recentLogs);
 
 		// Inject the restoration context as a follow-up so the agent is aware
 		pi.sendMessage(
@@ -130,7 +140,7 @@ export default function (pi: ExtensionAPI) {
 			{ deliverAs: "nextTurn" },
 		);
 
-		ctx.ui.notify("✅ Compaction complete — memory preserved", "success");
+		ctx.ui.notify("Compaction complete — memory preserved", "success");
 	});
 
 
@@ -231,6 +241,9 @@ export default function (pi: ExtensionAPI) {
 		async execute(_toolCallId, params: { instructions?: string }, _signal, _onUpdate, ctx) {
 			const customInstructions = params.instructions?.trim() || undefined;
 
+			// Signal to session_compact hook that we're handling restoration ourselves
+			(globalThis as any).__piAutoCompacting = true;
+
 			// Compact directly using ctx.compact() — same approach as footer auto-compaction.
 			// The session_before_compact hook saves daily log + session state automatically.
 			const compactionResult = await new Promise<{ success: boolean; error?: string }>((resolve) => {
@@ -245,6 +258,9 @@ export default function (pi: ExtensionAPI) {
 					},
 				});
 			});
+
+			// Clear flag regardless of outcome
+			(globalThis as any).__piAutoCompacting = false;
 
 			if (!compactionResult.success) {
 				return {
