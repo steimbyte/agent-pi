@@ -1,6 +1,6 @@
 {
   "quietStartup": true,
-  "lastChangelogVersion": "0.55.3",
+  "lastChangelogVersion": "0.55.4",
   "theme": "midnight-ocean",
   "transport": "sse",
   "defaultProvider": "anthropic",
@@ -22,9 +22,12 @@
     "extensions/commander-mcp.ts",
     "extensions/commander-tracker.ts",
     "extensions/toolkit-commands.ts",
+    "extensions/debug-capture.ts",
     "extensions/user-question.ts",
     "extensions/agent-nav.ts",
-    "extensions/footer.ts"
+    "extensions/footer.ts",
+    "extensions/memory-cycle.ts",
+    "extensions/message-integrity-guard.ts"
   ],
   "editorPaddingX": 2,
   "showHardwareCursor": true,

@@ -226,6 +226,71 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	// ── Deferred compaction via agent_end hook ────────────────────
+	// The cycle_memory tool CANNOT call ctx.compact() directly because
+	// compact() calls abort() which waits for the agent to be idle,
+	// but the agent is blocked waiting for the tool to return → deadlock.
+	//
+	// Instead: tool sets a flag → returns immediately → agent_end fires
+	// when the agent loop finishes → we compact from there (agent is idle).
+
+	let pendingCycleMemory: { instructions?: string } | null = null;
+
+	pi.on("agent_end", async (_event, ctx) => {
+		if (!pendingCycleMemory) return;
+
+		const request = pendingCycleMemory;
+		pendingCycleMemory = null;
+
+		// Signal to session_compact hook that we're handling restoration ourselves
+		(globalThis as any).__piAutoCompacting = true;
+
+		ctx.ui.notify("Memory Cycle: Compacting context...", "info");
+
+		ctx.compact({
+			customInstructions: request.instructions
+				?? "Create a comprehensive summary preserving all goals, decisions, progress, file changes, and context needed to continue work seamlessly.",
+			onComplete: () => {
+				const postUsage = ctx.getContextUsage();
+				const postPercent = postUsage?.percent ? Math.round(postUsage.percent) : 0;
+
+				// Read restored context for the agent
+				const sessionState = readSessionState(ctx.cwd);
+				const recentLogs = readRecentLogs();
+				const parts = buildRestorationContent(sessionState);
+				if (recentLogs) parts.push("", recentLogs);
+
+				const resumeContent = [
+					"Memory cycle complete — context compacted and restored.",
+					`Context usage now at ${postPercent}%.`,
+					"",
+					...parts,
+					"",
+					"Continue where you left off. Resume the task you were working on before compaction. Do NOT ask the user what to do — just keep working.",
+				].join("\n");
+
+				// Clear auto-compaction flag
+				(globalThis as any).__piAutoCompacting = false;
+
+				ctx.ui.notify("Memory Cycle complete — context compacted and restored", "success");
+
+				// Nudge the agent to continue working with full restored context
+				pi.sendMessage(
+					{
+						customType: "memory-cycle-resume",
+						content: resumeContent,
+						display: false,
+					},
+					{ deliverAs: "followUp", triggerTurn: true },
+				);
+			},
+			onError: (err: Error) => {
+				(globalThis as any).__piAutoCompacting = false;
+				ctx.ui.notify(`Memory Cycle failed: ${err.message}. Try /compact manually.`, "error");
+			},
+		});
+	});
+
 	// ── cycle_memory tool (LLM-callable) ─────────────────────────
 
 	pi.registerTool({
@@ -236,73 +301,26 @@ export default function (pi: ExtensionAPI) {
 		promptGuidelines: [
 			"Use cycle_memory when context usage is high (>70%) or the user asks to compact/cycle/refresh memory.",
 			"After cycle_memory completes, you will have a fresh context window with full memory of what happened.",
+			"The tool returns immediately — compaction happens after the current turn ends. You will be resumed automatically with restored context.",
 		],
 		parameters: CycleParams,
 		async execute(_toolCallId, params: { instructions?: string }, _signal, _onUpdate, ctx) {
 			const customInstructions = params.instructions?.trim() || undefined;
 
-			// Signal to session_compact hook that we're handling restoration ourselves
-			(globalThis as any).__piAutoCompacting = true;
+			// Schedule compaction for after this agent turn ends (avoids deadlock).
+			// The agent_end hook above picks this up and fires ctx.compact().
+			pendingCycleMemory = { instructions: customInstructions };
 
-			// Compact directly using ctx.compact() — same approach as footer auto-compaction.
-			// The session_before_compact hook saves daily log + session state automatically.
-			const compactionResult = await new Promise<{ success: boolean; error?: string }>((resolve) => {
-				ctx.compact({
-					customInstructions: customInstructions
-						?? "Create a comprehensive summary preserving all goals, decisions, progress, file changes, and context needed to continue work seamlessly.",
-					onComplete: () => {
-						resolve({ success: true });
-					},
-					onError: (err: Error) => {
-						resolve({ success: false, error: err.message });
-					},
-				});
-			});
-
-			// Clear flag regardless of outcome
-			(globalThis as any).__piAutoCompacting = false;
-
-			if (!compactionResult.success) {
-				return {
-					content: [
-						{
-							type: "text",
-							text: `Memory cycle failed: ${compactionResult.error}. Try /compact manually.`,
-						},
-					],
-					details: { status: "failed", error: compactionResult.error },
-				};
-			}
-
-			// Read restored context for the agent
-			const sessionState = readSessionState(ctx.cwd);
-			const recentLogs = readRecentLogs();
-			const parts = buildRestorationContent(sessionState);
-
-			if (recentLogs) {
-				parts.push("", recentLogs);
-			}
-
-			// Send a follow-up message to nudge the agent to continue working
-			pi.sendMessage(
-				{
-					customType: "memory-cycle-resume",
-					content: "Memory cycle complete. Context compacted and restored. Continue where you left off — resume the task you were working on.",
-					display: false,
-				},
-				{ deliverAs: "followUp", triggerTurn: true },
-			);
-
-			ctx.ui.notify("Memory Cycle complete — context compacted and restored", "success");
+			ctx.ui.notify("Memory Cycle scheduled — will compact after this turn completes.", "info");
 
 			return {
 				content: [
 					{
 						type: "text",
-						text: `Memory cycle complete. Context compacted and memory preserved.\n\n${parts.join("\n")}`,
+						text: "Memory cycle scheduled. Compaction will run automatically after this turn completes. You will be resumed with full memory context. Do not call any more tools — just finish this turn.",
 					},
 				],
-				details: { status: "complete", instructions: params.instructions },
+				details: { status: "scheduled", instructions: params.instructions },
 			};
 		},
 	});

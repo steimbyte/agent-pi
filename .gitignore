@@ -19,4 +19,5 @@ agent/pi-crash.log
 
 # Generated artifacts
 .pi/agent-sessions/
+.pi/debug-captures/
 agent/extensions/coverage/
