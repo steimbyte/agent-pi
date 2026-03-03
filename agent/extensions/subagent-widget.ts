@@ -178,9 +178,9 @@ export default function (pi: ExtensionAPI) {
 		ctx: any,
 		peerNames?: string[],
 	): Promise<void> {
-		const model = ctx.model
-			? `${ctx.model.provider}/${ctx.model.id}`
-			: DEFAULT_SUBAGENT_MODEL;
+		// Model priority: 1) caller-specified override, 2) parent model, 3) default
+		const model = state.model
+			|| (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : DEFAULT_SUBAGENT_MODEL);
 		state.model = model;
 
 		const extDir = path.dirname(fileURLToPath(import.meta.url));
@@ -339,6 +339,7 @@ export default function (pi: ExtensionAPI) {
 			task: Type.String({ description: "The complete task description for the subagent to perform" }),
 			name: Type.Optional(Type.String({ description: "Short role label (e.g. REVIEWER, SCOUT)" })),
 			summary: Type.Optional(Type.String({ description: "Short summary shown in widget (no markdown)" })),
+			model: Type.Optional(Type.String({ description: "Model to use (e.g. 'anthropic/claude-haiku-4-5', 'grok-4-fast'). Defaults to parent model." })),
 			commanderTaskId: Type.Optional(Type.Number({ description: "Pre-assigned Commander task ID (avoids race conditions)" })),
 			autoRemove: Type.Optional(Type.Boolean({ description: "Auto-remove widget ~30s after done (default: true)" })),
 		}),
@@ -358,6 +359,7 @@ export default function (pi: ExtensionAPI) {
 				summary: args.summary,
 				commanderTaskId: args.commanderTaskId,
 				autoRemove: args.autoRemove,
+				model: args.model, // caller-specified model override
 			};
 			agents.set(id, state);
 			registerWidget(state);
@@ -379,6 +381,7 @@ export default function (pi: ExtensionAPI) {
 				task: Type.String({ description: "The complete task description for the subagent" }),
 				name: Type.Optional(Type.String({ description: "Short role label (e.g. REVIEWER, SCOUT)" })),
 				summary: Type.Optional(Type.String({ description: "Short summary shown in widget (no markdown)" })),
+				model: Type.Optional(Type.String({ description: "Model override for this agent (e.g. 'anthropic/claude-haiku-4-5')" })),
 			}), { description: "Array of agent definitions to spawn" }),
 			groupName: Type.Optional(Type.String({ description: "Commander task group name (used when Commander is available)" })),
 			autoRemove: Type.Optional(Type.Boolean({ description: "Auto-remove widgets ~30s after done (default: true)" })),
@@ -405,6 +408,7 @@ export default function (pi: ExtensionAPI) {
 					turnCount: 1,
 					summary: def.summary,
 					autoRemove: args.autoRemove,
+					model: def.model, // per-agent model override
 				};
 			});
 
