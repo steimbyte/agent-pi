@@ -29,7 +29,7 @@ describe("buildCommanderPrompt", () => {
 			agentName: "SCOUT",
 			enableMailboxChat: true,
 		});
-		expect(result).toContain("Inter-Agent Communication");
+		expect(result).toContain("Inter-Agent Mailbox Communication (REQUIRED)");
 		expect(result).toContain("commander_mailbox");
 	});
 
@@ -38,7 +38,7 @@ describe("buildCommanderPrompt", () => {
 			agentName: "SCOUT",
 			enableMailboxChat: false,
 		});
-		expect(result).not.toContain("Inter-Agent Communication");
+		expect(result).not.toContain("Inter-Agent Mailbox Communication");
 	});
 
 	it("lists peer names in mailbox chat section", () => {
@@ -57,8 +57,8 @@ describe("buildCommanderPrompt", () => {
 			enableMailboxChat: true,
 			peerNames: [],
 		});
-		expect(result).toContain("Inter-Agent Communication");
-		expect(result).not.toContain("Your peers are:");
+		expect(result).toContain("Inter-Agent Mailbox Communication (REQUIRED)");
+		expect(result).not.toContain("Your active peers:");
 	});
 
 	it("includes heartbeat instructions for tasks", () => {

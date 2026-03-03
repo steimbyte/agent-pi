@@ -1075,11 +1075,16 @@ After reviewing the output:
 		const commanderAvailable = !!(globalThis as any).__piCommanderAvailable;
 		const commanderSection = commanderAvailable ? `
 
-## Commander Integration
-Commander is available. Use these tools when appropriate:
+## Commander Integration (REQUIRED)
+Commander is connected. ALWAYS use these tools for dashboard visibility:
 - \`commander_session { operation: "file:open", file_path: <path> }\` — display key files in Commander's floating viewer
 - \`commander_task\` — track tasks in the Commander dashboard
-- \`commander_mailbox\` — broadcast status updates to the dashboard
+- \`commander_mailbox\` — send status updates to the dashboard
+
+### Mailbox Protocol
+- Check your inbox periodically: \`commander_mailbox { operation: "inbox", agent_name: "coordinator" }\`
+- Send status at start, milestones, and completion
+- Warm, professional, collaborative tone — no emojis anywhere
 - Use file:open to show pipeline plans, phase results, or review reports` : "";
 
 		return {

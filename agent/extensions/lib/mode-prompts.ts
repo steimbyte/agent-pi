@@ -7,7 +7,12 @@ export function buildCommanderSection(): string {
 Commander is connected. ALWAYS use these tools for dashboard visibility:
 - \`commander_session { operation: "file:open", file_path: <path> }\` — display key files in Commander's floating viewer
 - \`commander_task\` — track tasks in the Commander dashboard (auto-synced from local tasks)
-- \`commander_mailbox\` — ALWAYS send status updates at task start and completion`;
+- \`commander_mailbox\` — ALWAYS send status updates at task start and completion
+
+### Mailbox Protocol
+- Check your inbox periodically: \`commander_mailbox { operation: "inbox", agent_name: "<your-name>" }\`
+- Send status at start, milestones, and completion
+- Warm, professional, collaborative tone — no emojis anywhere`;
 }
 
 /** Options for building the NORMAL mode prompt. */

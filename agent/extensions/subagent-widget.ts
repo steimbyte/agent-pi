@@ -207,7 +207,7 @@ export default function (pi: ExtensionAPI) {
 			const cmdPrompt = buildCommanderPrompt({
 				agentName: `SA-${state.id}-${state.name}`,
 				taskId: cmdTaskId,
-				enableMailboxChat: !!(peerNames && peerNames.length > 0),
+				enableMailboxChat: true,
 				peerNames,
 			});
 			systemPromptArgs.push("--append-system-prompt", cmdPrompt);
