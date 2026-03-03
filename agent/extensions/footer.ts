@@ -8,7 +8,10 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { truncateToWidth } from "@mariozechner/pi-tui";
 import { basename, dirname } from "node:path";
 import { applyExtensionDefaults } from "./lib/themeMap.ts";
-import { shouldBlockForCompaction, COMPACT_THRESHOLD } from "./lib/context-gate.ts";
+import { shouldBlockForCompaction, COMPACT_THRESHOLD, BLOCK_THRESHOLD } from "./lib/context-gate.ts";
+
+/** Subagents compact earlier since no human can intervene if they hit the wall. */
+const SUBAGENT_BLOCK_THRESHOLD = COMPACT_THRESHOLD; // 80%
 
 /** Turn a model name like "Claude 4 Opus" into "opus 4" */
 function shortModelName(name: string | undefined): string {
@@ -75,7 +78,6 @@ function connectionInfo(ctx: ExtensionContext, percent?: number): string[] {
 }
 
 function requestAutoCompact(ctx: ExtensionContext, pi: ExtensionAPI): void {
-	if (process.env.PI_SUBAGENT === "1") return;
 	if (compactState.status === "requested") return;
 	const usage = ctx.getContextUsage();
 	if (!usage?.percent) return;
@@ -124,7 +126,7 @@ function requestAutoCompact(ctx: ExtensionContext, pi: ExtensionAPI): void {
 	})();
 }
 
-function finalizeCompactStatus(ctx: ExtensionContext): void {
+function finalizeCompactStatus(ctx: ExtensionContext, pi: ExtensionAPI): void {
 	if (compactState.status !== "requested") return;
 	const usage = ctx.getContextUsage();
 	if (!usage?.percent) return;
@@ -136,12 +138,22 @@ function finalizeCompactStatus(ctx: ExtensionContext): void {
 		ctx.ui.notify(
 			compactBox("Auto-Compaction Complete", [
 				`Recovered context usage to ${percent}%.`,
-				"Normal workflow resumed.",
+				"Automatically resuming work.",
 				...connectionInfo(ctx, percent),
 			]),
 			"success",
 		);
 		compactState.lastNoticeAt = now;
+
+		// Auto-continue: send a follow-up message so the agent picks up where it left off
+		pi.sendMessage(
+			{
+				customType: "auto-compact-resume",
+				content: "Auto-compaction complete — context recovered. Continue where you left off. Resume the task you were working on before compaction interrupted.",
+				display: true,
+			},
+			{ deliverAs: "followUp", triggerTurn: true },
+		);
 		return;
 	}
 
@@ -191,9 +203,10 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_call", async (_event, ctx) => {
-		if (process.env.PI_SUBAGENT === "1") return { block: false };
+		const isSubagent = process.env.PI_SUBAGENT === "1";
 		const usage = ctx.getContextUsage();
-		const result = shouldBlockForCompaction(usage?.percent);
+		const threshold = isSubagent ? SUBAGENT_BLOCK_THRESHOLD : undefined;
+		const result = shouldBlockForCompaction(usage?.percent, threshold);
 
 		if (result.block) {
 			requestAutoCompact(ctx, pi);
@@ -205,9 +218,10 @@ export default function (pi: ExtensionAPI) {
 
 	let warnedThisTurn = false;
 	pi.on("before_agent_start", async (_event, ctx) => {
-		if (process.env.PI_SUBAGENT === "1") return;
+		const isSubagent = process.env.PI_SUBAGENT === "1";
 		const usage = ctx.getContextUsage();
-		const result = shouldBlockForCompaction(usage?.percent);
+		const threshold = isSubagent ? SUBAGENT_BLOCK_THRESHOLD : undefined;
+		const result = shouldBlockForCompaction(usage?.percent, threshold);
 
 		if (result.level === "warn") {
 			if (!warnedThisTurn) {
@@ -223,7 +237,7 @@ export default function (pi: ExtensionAPI) {
 			requestAutoCompact(ctx, pi);
 		}
 
-		finalizeCompactStatus(ctx);
+		finalizeCompactStatus(ctx, pi);
 	});
 
 	pi.on("session_shutdown", async () => {

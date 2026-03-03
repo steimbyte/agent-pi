@@ -10,9 +10,9 @@ export interface CompactionGateResult {
 	level: "ok" | "warn" | "block";
 }
 
-export function shouldBlockForCompaction(percent: number | undefined): CompactionGateResult {
+export function shouldBlockForCompaction(percent: number | undefined, blockThreshold: number = BLOCK_THRESHOLD): CompactionGateResult {
 	if (percent == null) return { block: false, level: "ok" };
-	if (percent >= BLOCK_THRESHOLD) return {
+	if (percent >= blockThreshold) return {
 		block: true,
 		level: "block",
 		reason: `Context at ${Math.round(percent)}% — approaching limit. Run /compact or /compact-min NOW to prevent context loss errors. Do NOT continue working until compaction is done.`,

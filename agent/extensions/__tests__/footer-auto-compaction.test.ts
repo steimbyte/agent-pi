@@ -82,7 +82,7 @@ describe("footer auto-compaction behavior", () => {
 		expect(sendMessage).not.toHaveBeenCalled();
 	});
 
-	it("reports compact-complete when context recovers below warning threshold after request", async () => {
+	it("reports compact-complete and sends auto-continue message when context recovers", async () => {
 		const { handlers, pi, sendMessage } = createExtension();
 		const extension = await import("../footer.ts");
 		extension.default(pi);
@@ -94,5 +94,76 @@ describe("footer auto-compaction behavior", () => {
 
 		await handlers["before_agent_start"]("before_agent_start", createContext({ percent: 79, ui: notify }));
 		expect(notify).toHaveBeenCalledWith(expect.stringContaining("Auto-Compaction Complete"), "success");
+
+		// Should send auto-continue follow-up message
+		expect(sendMessage).toHaveBeenCalledTimes(2);
+		expect(sendMessage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				customType: "auto-compact-resume",
+				content: expect.stringContaining("Continue where you left off"),
+			}),
+			{ deliverAs: "followUp", triggerTurn: true },
+		);
+	});
+
+	it("subagent blocks and auto-compacts at 80% threshold", async () => {
+		process.env.PI_SUBAGENT = "1";
+		const { handlers, pi, sendMessage } = createExtension();
+		const extension = await import("../footer.ts");
+		extension.default(pi);
+
+		const notify = vi.fn();
+		const ctx = createContext({ percent: 80, ui: notify });
+		const result = await handlers["tool_call"]("tool_call", ctx);
+
+		expect(result).toEqual({
+			block: true,
+			reason: expect.stringContaining("Context at 80%"),
+		});
+		await tick();
+		expect(sendMessage).toHaveBeenCalledTimes(1);
+		expect(sendMessage).toHaveBeenCalledWith(
+			{ content: "/compact-min", display: true },
+			{ deliverAs: "user", triggerTurn: true },
+		);
+	});
+
+	it("subagent does not block below 80% threshold", async () => {
+		process.env.PI_SUBAGENT = "1";
+		const { handlers, pi, sendMessage } = createExtension();
+		const extension = await import("../footer.ts");
+		extension.default(pi);
+
+		const notify = vi.fn();
+		const ctx = createContext({ percent: 79, ui: notify });
+		const result = await handlers["tool_call"]("tool_call", ctx);
+
+		expect(result).toEqual({ block: false });
+		await tick();
+		expect(sendMessage).not.toHaveBeenCalled();
+	});
+
+	it("subagent auto-continues after compaction recovery", async () => {
+		process.env.PI_SUBAGENT = "1";
+		const { handlers, pi, sendMessage } = createExtension();
+		const extension = await import("../footer.ts");
+		extension.default(pi);
+
+		const notify = vi.fn();
+		// Trigger compaction at 80%
+		await handlers["tool_call"]("tool_call", createContext({ percent: 80, ui: notify }));
+		await tick();
+		expect(sendMessage).toHaveBeenCalledTimes(1);
+
+		// Context recovers
+		await handlers["before_agent_start"]("before_agent_start", createContext({ percent: 50, ui: notify }));
+		expect(notify).toHaveBeenCalledWith(expect.stringContaining("Auto-Compaction Complete"), "success");
+		expect(sendMessage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				customType: "auto-compact-resume",
+				content: expect.stringContaining("Continue where you left off"),
+			}),
+			{ deliverAs: "followUp", triggerTurn: true },
+		);
 	});
 });

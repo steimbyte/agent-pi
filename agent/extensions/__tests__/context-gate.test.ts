@@ -49,6 +49,33 @@ describe("shouldBlockForCompaction", () => {
 	});
 });
 
+describe("custom blockThreshold parameter", () => {
+	it("should block at custom threshold when provided", () => {
+		const result = shouldBlockForCompaction(80, 80);
+		expect(result.block).toBe(true);
+		expect(result.level).toBe("block");
+	});
+
+	it("should not block below custom threshold", () => {
+		const result = shouldBlockForCompaction(79, 80);
+		expect(result.block).toBe(false);
+	});
+
+	it("should still warn between COMPACT_THRESHOLD and custom blockThreshold", () => {
+		// With blockThreshold=85, 82% should warn (>= 80 COMPACT_THRESHOLD, < 85)
+		const result = shouldBlockForCompaction(82, 85);
+		expect(result.level).toBe("warn");
+		expect(result.block).toBe(false);
+	});
+
+	it("should use default BLOCK_THRESHOLD when not provided", () => {
+		// 85% with default threshold (90) should warn, not block
+		const result = shouldBlockForCompaction(85);
+		expect(result.level).toBe("warn");
+		expect(result.block).toBe(false);
+	});
+});
+
 describe("threshold constants", () => {
 	it("COMPACT_THRESHOLD should be 80", () => {
 		expect(COMPACT_THRESHOLD).toBe(80);
