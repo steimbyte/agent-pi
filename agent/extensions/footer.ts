@@ -1,5 +1,5 @@
 // ABOUTME: Footer widget displaying model name, context percentage, and working directory.
-// ABOUTME: Auto-compaction helper with elegant status box and connection metadata.
+// ABOUTME: Auto-compaction trigger — blocks tools at high context usage and fires native compaction.
 /**
  * Footer — Dark status bar with model · context % · directory.
  */
@@ -53,29 +53,6 @@ let compactState: CompactState = {
 const AUTO_COMPACT_COOLDOWN_MS = 10_000;
 const REQUEST_TTL_MS = 90_000;
 
-function padRight(value: string, width: number): string {
-	return value.length >= width ? value.slice(0, width) : `${value}${" ".repeat(width - value.length)}`;
-}
-
-function compactBox(title: string, lines: string[]): string {
-	const width = Math.max(56, Math.min(96, Math.max(title.length, ...lines.map((l) => l.length)) + 6));
-	const top = `┌${"─".repeat(width - 2)}┐`;
-	const header = `│ ${padRight(title, width - 3)}│`;
-	const body = lines.map((line) => `│ ${padRight(line, width - 3)}│`);
-	const bottom = `└${"─".repeat(width - 2)}┘`;
-	return [top, header, ...body, bottom].join("\n");
-}
-
-function connectionInfo(ctx: ExtensionContext, percent?: number): string[] {
-	const model = ctx.model;
-	return [
-		`Model: ${shortModelName(model?.name)} (${model?.provider ?? "local"})`,
-		`Context: ${percent != null ? `${Math.round(percent)}%` : "n/a"}`,
-		`Workspace: ${shortDir(ctx.cwd)}`,
-		`Connection: ${model?.id ? `${model.provider ?? "default"}/${model.id}` : "pi session"}`,
-	];
-}
-
 function requestAutoCompact(ctx: ExtensionContext, pi: ExtensionAPI): void {
 	if (compactState.status === "requested") return;
 	const usage = ctx.getContextUsage();
@@ -94,11 +71,7 @@ function requestAutoCompact(ctx: ExtensionContext, pi: ExtensionAPI): void {
 	(globalThis as any).__piAutoCompacting = true;
 
 	ctx.ui.notify(
-		compactBox("Auto-Compaction Started", [
-			`Usage at ${Math.round(usage.percent)}% — triggering native compaction.`,
-			`Memory will be saved automatically via session_before_compact hook.`,
-			...connectionInfo(ctx, usage.percent),
-		]),
+		`Context at ${Math.round(usage.percent)}% — compacting automatically`,
 		"warning",
 	);
 
@@ -113,14 +86,8 @@ function requestAutoCompact(ctx: ExtensionContext, pi: ExtensionAPI): void {
 			compactState.status = "done";
 			compactState.lastNoticeAt = Date.now();
 
-			ctx.ui.notify(
-				compactBox("Auto-Compaction Complete", [
-					`Recovered context usage to ${postPercent}%.`,
-					"Memory saved. Resuming work automatically.",
-					...connectionInfo(ctx, postPercent),
-				]),
-				"success",
-			);
+			// The visual card is rendered by memory-cycle.ts registerMessageRenderer
+			// via the auto-compact-resume message below. No separate notify needed.
 
 			// Build rich resume message with restored session state
 			const sessionState = readSessionState(ctx.cwd);
@@ -139,7 +106,28 @@ function requestAutoCompact(ctx: ExtensionContext, pi: ExtensionAPI): void {
 			// Clear auto-compaction flag
 			(globalThis as any).__piAutoCompacting = false;
 
-			// Nudge the agent to continue working with full restored context
+			// Notify user visually
+			ctx.ui.notify(
+				`Context compacted -- now at ${postPercent}%`,
+				"info",
+			);
+
+			// Short card visible to user (renderCompactionCard in memory-cycle.ts)
+			pi.sendMessage(
+				{
+					customType: "auto-compact-resume",
+					content: `Context compacted -- now at ${postPercent}%.`,
+					display: true,
+					details: {
+						source: "auto" as const,
+						postPercent,
+						task: sessionState?.currentTask,
+						recentFiles: sessionState?.filesEdited,
+					},
+				},
+			);
+
+			// Full context for the agent (not displayed)
 			pi.sendMessage(
 				{
 					customType: "auto-compact-resume",
@@ -153,14 +141,7 @@ function requestAutoCompact(ctx: ExtensionContext, pi: ExtensionAPI): void {
 			(globalThis as any).__piAutoCompacting = false;
 			compactState.status = "failed";
 			compactState.lastNoticeAt = Date.now();
-			ctx.ui.notify(
-				compactBox("Auto-Compaction Failed", [
-					`Error: ${err.message}`,
-					"Please run /compact manually.",
-					...connectionInfo(ctx),
-				]),
-				"error",
-			);
+			ctx.ui.notify(`Compaction failed: ${err.message}. Try /compact manually.`, "error");
 		},
 	});
 }
@@ -175,14 +156,7 @@ function finalizeCompactStatus(ctx: ExtensionContext, _pi: ExtensionAPI): void {
 		const percent = usage?.percent ? Math.round(usage.percent) : 0;
 		compactState.status = "failed";
 		compactState.lastNoticeAt = now;
-		ctx.ui.notify(
-			compactBox("Auto-Compaction Timeout", [
-				"Compaction did not complete in time.",
-				"Please run /compact manually if needed.",
-				...connectionInfo(ctx, percent),
-			]),
-			"error",
-		);
+		ctx.ui.notify("Compaction timed out. Try /compact manually.", "error");
 	}
 }
 

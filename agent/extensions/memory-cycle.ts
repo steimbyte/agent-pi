@@ -18,6 +18,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 // convertToLlm and serializeConversation available if needed for custom summary generation
 import { Type } from "@sinclair/typebox";
+import { Box, Text } from "@mariozechner/pi-tui";
 import {
 	getProjectName,
 	getTimestamp,
@@ -39,9 +40,108 @@ const CycleParams = Type.Object({
 	),
 });
 
+// ── Compaction Card Details ──────────────────────────────────────────
+
+interface CompactionCardDetails {
+	/** "cycle" for cycle_memory, "auto" for footer auto-compact, "manual" for /compact */
+	source: "cycle" | "auto" | "manual";
+	/** Context percentage after compaction */
+	postPercent: number;
+	/** Recent session task, if available */
+	task?: string;
+	/** Recently edited files */
+	recentFiles?: string[];
+}
+
+// ── Compaction Card Renderer ─────────────────────────────────────────
+// Renders a minimal, elegant dark-themed status card when compaction
+// completes. Appears for cycle_memory, auto-compact, and manual /compact.
+
+function renderCompactionCard(
+	message: any,
+	_options: any,
+	theme: any,
+) {
+	const details = message.details;
+	const percent = details?.postPercent ?? 0;
+	const source = details?.source ?? "cycle";
+
+	// ── Title ───────────────────────────────────────────────────
+	const label = source === "auto"
+		? "Context Compacted"
+		: source === "manual"
+			? "Context Compacted"
+			: "Memory Cycle Complete";
+	const title = theme.fg("muted", label);
+
+	// ── Percentage — color-coded by health ──────────────────────
+	const pctColor = percent <= 30 ? "success" : percent <= 60 ? "muted" : "warning";
+	const pctText = theme.fg(pctColor as any, `${percent}%`) +
+		theme.fg("dim", " context used");
+
+	// ── Detail lines (task + files) ─────────────────────────────
+	const detailLines: string[] = [];
+
+	if (details?.task) {
+		const truncated = details.task.length > 72
+			? details.task.slice(0, 69) + "..."
+			: details.task;
+		detailLines.push(
+			theme.fg("dim", "task ") + theme.fg("muted", truncated),
+		);
+	}
+
+	if (details?.recentFiles?.length) {
+		const shown = details.recentFiles.slice(0, 3);
+		const names = shown.map((f: string) => {
+			const parts = f.split("/");
+			return parts.length > 1 ? parts.slice(-2).join("/") : parts[0];
+		});
+		const more = details.recentFiles.length > 3
+			? theme.fg("dim", ` +${details.recentFiles.length - 3}`)
+			: "";
+		detailLines.push(
+			theme.fg("dim", "files ") +
+			theme.fg("muted", names.join(theme.fg("dim", " / "))) + more,
+		);
+	}
+
+	// ── Assemble card body ──────────────────────────────────────
+	const lines: string[] = [
+		title,
+		pctText,
+	];
+
+	if (detailLines.length > 0) {
+		lines.push("");  // blank separator line
+		for (const dl of detailLines) lines.push(dl);
+	}
+
+	const body = lines.join("\n");
+
+	// Custom dark-charcoal background — distinct from the ocean-blue theme
+	// Neutral gray so it reads as a "system" card, not success/error
+	const cardBg = (text: string) => `\x1b[48;2;30;36;42m${text}\x1b[49m`;
+	const box = new Box(
+		3,  // generous horizontal padding
+		1,  // vertical breathing room
+		cardBg,
+	);
+	box.addChild(new Text(body, 0, 0));
+	return box;
+}
+
 // ── Extension ────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
+	// ── Message Renderers ────────────────────────────────────────
+	// Register custom renderers for compaction status cards.
+	// These render in the chat when display:true is set on sendMessage.
+
+	pi.registerMessageRenderer<CompactionCardDetails>("memory-cycle-resume", renderCompactionCard);
+	pi.registerMessageRenderer<CompactionCardDetails>("auto-compact-resume", renderCompactionCard);
+	pi.registerMessageRenderer<CompactionCardDetails>("memory-restored", renderCompactionCard);
+
 	// Track cwd across compact events (before_compact → compact)
 	let preCompactCwd: string = "";
 
@@ -96,7 +196,7 @@ export default function (pi: ExtensionAPI) {
 				filesRead: readFiles.slice(0, 10),
 			});
 
-			ctx.ui.notify("📝 Memory saved (daily log + session state)", "info");
+			ctx.ui.notify("Memory saved (daily log + session state)", "info");
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
 			console.error(`[memory-cycle] Pre-compact save failed: ${msg}`);
@@ -131,16 +231,33 @@ export default function (pi: ExtensionAPI) {
 		if (recentLogs) parts.push("", recentLogs);
 
 		// Inject the restoration context as a follow-up so the agent is aware
+		const postUsage = ctx.getContextUsage();
+		const postPercent = postUsage?.percent ? Math.round(postUsage.percent) : 0;
+
+		// Short card visible to user
+		pi.sendMessage(
+			{
+				customType: "memory-restored",
+				content: `Context compacted -- now at ${postPercent}%.`,
+				display: true,
+				details: {
+					source: "manual",
+					postPercent,
+					task: sessionState?.currentTask,
+					recentFiles: sessionState?.filesEdited,
+				} satisfies CompactionCardDetails,
+			},
+		);
+
+		// Full restoration context for the agent (not displayed)
 		pi.sendMessage(
 			{
 				customType: "memory-restored",
 				content: parts.join("\n"),
-				display: false, // Don't clutter the display — agent sees it internally
+				display: false,
 			},
 			{ deliverAs: "nextTurn" },
 		);
-
-		ctx.ui.notify("Compaction complete — memory preserved", "success");
 	});
 
 
@@ -161,7 +278,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			ctx.ui.notify("🔄 Memory Cycle: Step 1/3 — Compacting...", "info");
+			ctx.ui.notify("Memory Cycle: Step 1/3 — Compacting...", "info");
 
 			// Step 1: Compact and capture summary
 			const compactionSummary = await new Promise<string | null>((resolve) => {
@@ -182,18 +299,18 @@ export default function (pi: ExtensionAPI) {
 						resolve(null);
 					},
 					onError: (err) => {
-						ctx.ui.notify(`❌ Compaction failed: ${err.message}`, "error");
+						ctx.ui.notify(`Compaction failed: ${err.message}`, "error");
 						resolve(null);
 					},
 				});
 			});
 
 			if (!compactionSummary) {
-				ctx.ui.notify("❌ Memory Cycle aborted — compaction produced no summary.", "error");
+				ctx.ui.notify("Memory Cycle aborted — compaction produced no summary.", "error");
 				return;
 			}
 
-			ctx.ui.notify("🔄 Memory Cycle: Step 2/3 — Creating fresh session...", "info");
+			ctx.ui.notify("Memory Cycle: Step 2/3 — Creating fresh session...", "info");
 
 			// Gather restoration context
 			const recentLogs = readRecentLogs();
@@ -222,7 +339,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			ctx.ui.notify("✅ Memory Cycle: Step 3/3 — Complete! Fresh context with full memory.", "success");
+			ctx.ui.notify("Memory Cycle complete — fresh context with full memory.", "success");
 		},
 	});
 
@@ -245,7 +362,7 @@ export default function (pi: ExtensionAPI) {
 		// Signal to session_compact hook that we're handling restoration ourselves
 		(globalThis as any).__piAutoCompacting = true;
 
-		ctx.ui.notify("Memory Cycle: Compacting context...", "info");
+		ctx.ui.setStatus("memory-cycle", "Compacting context...");
 
 		ctx.compact({
 			customInstructions: request.instructions
@@ -269,12 +386,33 @@ export default function (pi: ExtensionAPI) {
 					"Continue where you left off. Resume the task you were working on before compaction. Do NOT ask the user what to do — just keep working.",
 				].join("\n");
 
-				// Clear auto-compaction flag
+				// Clear auto-compaction flag and status
 				(globalThis as any).__piAutoCompacting = false;
+				ctx.ui.setStatus("memory-cycle", undefined);
 
-				ctx.ui.notify("Memory Cycle complete — context compacted and restored", "success");
+				// Show a visible notification in the status area
+				ctx.ui.notify(
+					`Memory cycle complete -- context now at ${postPercent}%`,
+					"info",
+				);
 
-				// Nudge the agent to continue working with full restored context
+				// Send a SHORT display card (visible to user) + FULL context (for agent)
+				// The display message renders via registerMessageRenderer as a dark card.
+				// The context message triggers a new agent turn with full restoration data.
+				pi.sendMessage(
+					{
+						customType: "memory-cycle-resume",
+						content: `Memory cycle complete -- context compacted and restored.\nContext usage now at ${postPercent}%.`,
+						display: true,
+						details: {
+							source: "cycle",
+							postPercent,
+							task: sessionState?.currentTask,
+							recentFiles: sessionState?.filesEdited,
+						} satisfies CompactionCardDetails,
+					},
+				);
+
 				pi.sendMessage(
 					{
 						customType: "memory-cycle-resume",
@@ -286,6 +424,7 @@ export default function (pi: ExtensionAPI) {
 			},
 			onError: (err: Error) => {
 				(globalThis as any).__piAutoCompacting = false;
+				ctx.ui.setStatus("memory-cycle", undefined);
 				ctx.ui.notify(`Memory Cycle failed: ${err.message}. Try /compact manually.`, "error");
 			},
 		});
@@ -304,14 +443,32 @@ export default function (pi: ExtensionAPI) {
 			"The tool returns immediately — compaction happens after the current turn ends. You will be resumed automatically with restored context.",
 		],
 		parameters: CycleParams,
+
+		renderCall(args, theme) {
+			const hint = (args as any).instructions as string | undefined;
+			const preview = hint
+				? hint.length > 50 ? hint.slice(0, 47) + "..." : hint
+				: "";
+			const text = theme.fg("dim", "cycle_memory") +
+				(preview ? theme.fg("dim", "  ") + theme.fg("muted", preview) : "");
+			return new Text(text, 0, 0);
+		},
+
+		renderResult(result, _options, theme) {
+			const details = result.details as { status?: string } | undefined;
+			const status = details?.status ?? "done";
+			const msg = status === "scheduled"
+				? theme.fg("dim", "Memory cycle scheduled — compacting after this turn")
+				: theme.fg("dim", "Memory cycle complete");
+			return new Text(msg, 0, 0);
+		},
+
 		async execute(_toolCallId, params: { instructions?: string }, _signal, _onUpdate, ctx) {
 			const customInstructions = params.instructions?.trim() || undefined;
 
 			// Schedule compaction for after this agent turn ends (avoids deadlock).
 			// The agent_end hook above picks this up and fires ctx.compact().
 			pendingCycleMemory = { instructions: customInstructions };
-
-			ctx.ui.notify("Memory Cycle scheduled — will compact after this turn completes.", "info");
 
 			return {
 				content: [

@@ -83,16 +83,25 @@ describe("footer auto-compaction behavior", () => {
 			}),
 		);
 
-		// Since mock auto-calls onComplete, resume message should be sent
+		// Since mock auto-calls onComplete, resume messages should be sent:
+		// 1. Short display card (no options)
+		expect(sendMessage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				customType: "auto-compact-resume",
+				display: true,
+			}),
+		);
+		// 2. Full context for agent (with triggerTurn)
 		expect(sendMessage).toHaveBeenCalledWith(
 			expect.objectContaining({
 				customType: "auto-compact-resume",
 				content: expect.stringContaining("Continue where you left off"),
+				display: false,
 			}),
 			{ deliverAs: "followUp", triggerTurn: true },
 		);
 
-		expect(notify).toHaveBeenCalledWith(expect.stringContaining("Auto-Compaction Started"), "warning");
+		expect(notify).toHaveBeenCalledWith(expect.stringContaining("compacting automatically"), "warning");
 	});
 
 	it("warn-level context only warns and does not auto-trigger compaction", async () => {
@@ -116,11 +125,20 @@ describe("footer auto-compaction behavior", () => {
 		const ctx = createContext({ percent: 90, ui: notify });
 		await handlers["tool_call"]("tool_call", ctx);
 
-		// Mock auto-calls onComplete, so resume is sent immediately
+		// Mock auto-calls onComplete, so resume messages are sent immediately:
+		// Display card (short, visible to user)
 		expect(sendMessage).toHaveBeenCalledWith(
 			expect.objectContaining({
 				customType: "auto-compact-resume",
-				content: expect.stringContaining("compacted to free up space"),
+				display: true,
+			}),
+		);
+		// Full context for agent
+		expect(sendMessage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				customType: "auto-compact-resume",
+				content: expect.stringContaining("Auto-compaction complete"),
+				display: false,
 			}),
 			{ deliverAs: "followUp", triggerTurn: true },
 		);
@@ -191,11 +209,18 @@ describe("footer auto-compaction behavior", () => {
 		const ctx = createContext({ percent: 80, ui: notify });
 		await handlers["tool_call"]("tool_call", ctx);
 
-		// Since mock auto-calls onComplete, resume should already be sent
+		// Since mock auto-calls onComplete, resume messages should already be sent
+		expect(sendMessage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				customType: "auto-compact-resume",
+				display: true,
+			}),
+		);
 		expect(sendMessage).toHaveBeenCalledWith(
 			expect.objectContaining({
 				customType: "auto-compact-resume",
 				content: expect.stringContaining("Continue where you left off"),
+				display: false,
 			}),
 			{ deliverAs: "followUp", triggerTurn: true },
 		);
