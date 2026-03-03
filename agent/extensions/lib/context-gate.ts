@@ -15,7 +15,7 @@ export function shouldBlockForCompaction(percent: number | undefined, blockThres
 	if (percent >= blockThreshold) return {
 		block: true,
 		level: "block",
-		reason: `Context at ${Math.round(percent)}% — approaching limit. Run /compact or /compact-min NOW to prevent context loss errors. Do NOT continue working until compaction is done.`,
+		reason: `Context: ${Math.round(percent)}% — Agent will Cycle-Memory now. Do NOT continue working until compaction is done.`,
 	};
 	if (percent >= COMPACT_THRESHOLD) return {
 		block: false,

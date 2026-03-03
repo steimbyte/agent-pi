@@ -71,8 +71,8 @@ function requestAutoCompact(ctx: ExtensionContext, pi: ExtensionAPI): void {
 	(globalThis as any).__piAutoCompacting = true;
 
 	ctx.ui.notify(
-		`Context at ${Math.round(usage.percent)}% — compacting automatically`,
-		"warning",
+		`Context: ${Math.round(usage.percent)}% — Cycling Memory now`,
+		"info",
 	);
 
 	// Use pi's native ctx.compact() instead of sending /compact as user message.
@@ -216,8 +216,8 @@ export default function (pi: ExtensionAPI) {
 			if (!warnedThisTurn) {
 				warnedThisTurn = true;
 				ctx.ui.notify(
-					`Context at ${Math.round(usage?.percent ?? 0)}% — consider running /compact soon`,
-					"warning",
+					`Context: ${Math.round(usage?.percent ?? 0)}% — Agent will Cycle-Memory soon`,
+					"info",
 				);
 			}
 		} else if (result.level === "ok") {

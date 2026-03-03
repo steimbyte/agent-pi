@@ -70,7 +70,7 @@ describe("footer auto-compaction behavior", () => {
 		expect(result).toEqual({
 			block: true,
 			reason:
-				"Context at 90% — approaching limit. Run /compact or /compact-min NOW to prevent context loss errors. Do NOT continue working until compaction is done.",
+				"Context: 90% — Agent will Cycle-Memory now. Do NOT continue working until compaction is done.",
 		});
 
 		// Should call ctx.compact() directly
@@ -101,7 +101,7 @@ describe("footer auto-compaction behavior", () => {
 			{ deliverAs: "followUp", triggerTurn: true },
 		);
 
-		expect(notify).toHaveBeenCalledWith(expect.stringContaining("compacting automatically"), "warning");
+		expect(notify).toHaveBeenCalledWith(expect.stringContaining("Cycling Memory now"), "info");
 	});
 
 	it("warn-level context only warns and does not auto-trigger compaction", async () => {
@@ -111,7 +111,7 @@ describe("footer auto-compaction behavior", () => {
 
 		const notify = vi.fn();
 		await handlers["before_agent_start"]("before_agent_start", createContext({ percent: 80, ui: notify }));
-		expect(notify).toHaveBeenCalledWith(expect.stringContaining("consider running /compact soon"), "warning");
+		expect(notify).toHaveBeenCalledWith(expect.stringContaining("Agent will Cycle-Memory soon"), "info");
 		await tick();
 		expect(sendMessage).not.toHaveBeenCalled();
 	});
@@ -177,7 +177,7 @@ describe("footer auto-compaction behavior", () => {
 
 		expect(result).toEqual({
 			block: true,
-			reason: expect.stringContaining("Context at 80%"),
+			reason: expect.stringContaining("Context: 80%"),
 		});
 
 		// Should call ctx.compact() directly

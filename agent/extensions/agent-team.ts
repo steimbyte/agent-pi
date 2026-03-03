@@ -442,6 +442,8 @@ export default function (pi: ExtensionAPI) {
 		const extDir = dirname(fileURLToPath(import.meta.url));
 		const tasksExtPath = join(extDir, "tasks.ts");
 		const commanderExtPath = join(extDir, "commander-mcp.ts");
+		const footerExtPath = join(extDir, "footer.ts");
+		const memoryCycleExtPath = join(extDir, "memory-cycle.ts");
 
 		// Resolve tools — append commander tools when Commander is available
 		const g = globalThis as any;
@@ -487,6 +489,8 @@ export default function (pi: ExtensionAPI) {
 			"-p",
 			"--no-extensions",
 			"-e", tasksExtPath,
+			"-e", footerExtPath,
+			"-e", memoryCycleExtPath,
 			...(commanderAvailable ? ["-e", commanderExtPath] : []),
 			"--model", model,
 			"--tools", tools,
@@ -558,10 +562,10 @@ export default function (pi: ExtensionAPI) {
 								const level = contextBudgetLevel(state.contextPct);
 								if (level === "warn" && !state._warnSent) {
 									state._warnSent = true;
-									ctx.ui.notify(`${displayName(state.def.name)} context at ${Math.round(state.contextPct)}%`, "info");
+									ctx.ui.notify(`${displayName(state.def.name)} Context: ${Math.round(state.contextPct)}%`, "info");
 								} else if (level === "critical" && !state._criticalWarned) {
 									state._criticalWarned = true;
-									ctx.ui.notify(`${displayName(state.def.name)} context at ${Math.round(state.contextPct)}% — risk of context loss`, "warning");
+									ctx.ui.notify(`${displayName(state.def.name)} Context: ${Math.round(state.contextPct)}% — Agent will Cycle-Memory soon`, "info");
 								}
 								invalidateAgentWidget(state);
 							}

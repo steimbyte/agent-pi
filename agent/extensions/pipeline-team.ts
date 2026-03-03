@@ -332,12 +332,17 @@ export default function (pi: ExtensionAPI) {
 		const agentKey = `pipeline-${agentDef.name.toLowerCase().replace(/\s+/g, "-")}-${agentState.index}`;
 		const agentSessionFile = join(sessionDir, `${agentKey}.json`);
 
-		const tasksExtPath = join(dirname(fileURLToPath(import.meta.url)), "tasks.ts");
+		const extDir = dirname(fileURLToPath(import.meta.url));
+		const tasksExtPath = join(extDir, "tasks.ts");
+		const footerExtPath = join(extDir, "footer.ts");
+		const memoryCycleExtPath = join(extDir, "memory-cycle.ts");
 		const args = [
 			"--mode", "json",
 			"-p",
 			"--no-extensions",
 			"-e", tasksExtPath,
+			"-e", footerExtPath,
+			"-e", memoryCycleExtPath,
 			"--model", model,
 			"--tools", agentDef.tools,
 			"--thinking", "off",

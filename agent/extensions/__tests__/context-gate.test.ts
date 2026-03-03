@@ -33,7 +33,7 @@ describe("shouldBlockForCompaction", () => {
 		const result = shouldBlockForCompaction(BLOCK_THRESHOLD);
 		expect(result.block).toBe(true);
 		expect(result.level).toBe("block");
-		expect(result.reason).toContain("/compact");
+		expect(result.reason).toContain("Cycle-Memory");
 	});
 
 	it("should return block above 90%", () => {

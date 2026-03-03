@@ -100,10 +100,10 @@ describe("renderSubagentWidget", () => {
 	});
 
 	it("shows model as last component when present", () => {
-		const state = makeState({ model: "grok-4-fast" });
+		const state = makeState({ model: "x-ai/grok-4.1-fast" });
 		const result = renderSubagentWidget(state, 80, theme);
 
-		expect(result.lines[0]).toContain("| grok-4-fast");
+		expect(result.lines[0]).toContain("| x-ai/grok-4.1-fast");
 	});
 
 	it("omits model suffix when model is undefined", () => {

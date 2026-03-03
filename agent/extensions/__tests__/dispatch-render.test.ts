@@ -83,8 +83,8 @@ describe("dispatch renderResult — SubRenderState construction", () => {
 	});
 
 	it("passes model through when present", () => {
-		const state = buildDispatchRenderState({ agent: "scout", model: "grok-4-fast" });
-		expect(state.model).toBe("grok-4-fast");
+		const state = buildDispatchRenderState({ agent: "scout", model: "x-ai/grok-4.1-fast" });
+		expect(state.model).toBe("x-ai/grok-4.1-fast");
 	});
 
 	it("sets model to undefined when not present", () => {
@@ -116,13 +116,13 @@ describe("dispatch renderResult — rendered output via renderSubagentWidget", (
 			agent: "scout",
 			task: "Explore the codebase",
 			status: "dispatching",
-			model: "grok-4-fast",
+			model: "x-ai/grok-4.1-fast",
 		});
 		const result = renderSubagentWidget(state, 100, theme);
 
 		// Line 1: spinner + SCOUT - SA0 + stats + model
 		expect(result.lines[0]).toContain("SCOUT - SA0");
-		expect(result.lines[0]).toContain("grok-4-fast");
+		expect(result.lines[0]).toContain("x-ai/grok-4.1-fast");
 		// Line 2: task summary
 		expect(result.lines[1]).toContain("Explore the codebase");
 		expect(result.lines).toHaveLength(2);

@@ -278,12 +278,17 @@ export default function (pi: ExtensionAPI) {
 		const agentSessionFile = join(sessionDir, `chain-${agentKey}.json`);
 		const hasSession = agentSessions.get(agentKey);
 
-		const tasksExtPath = join(dirname(fileURLToPath(import.meta.url)), "tasks.ts");
+		const extDir = dirname(fileURLToPath(import.meta.url));
+		const tasksExtPath = join(extDir, "tasks.ts");
+		const footerExtPath = join(extDir, "footer.ts");
+		const memoryCycleExtPath = join(extDir, "memory-cycle.ts");
 		const args = [
 			"--mode", "json",
 			"-p",
 			"--no-extensions",
 			"-e", tasksExtPath,
+			"-e", footerExtPath,
+			"-e", memoryCycleExtPath,
 			"--model", model,
 			"--tools", agentDef.tools,
 			"--thinking", "off",

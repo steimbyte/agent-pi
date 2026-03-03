@@ -187,13 +187,15 @@ export default function (pi: ExtensionAPI) {
 		const extDir = path.dirname(fileURLToPath(import.meta.url));
 		const tasksExtPath = path.join(extDir, "tasks.ts");
 		const commanderExtPath = path.join(extDir, "commander-mcp.ts");
+		const footerExtPath = path.join(extDir, "footer.ts");
+		const memoryCycleExtPath = path.join(extDir, "memory-cycle.ts");
 
 		// Commander integration
 		const commanderAvail = isCommanderAvailable();
 		const cmdTaskId = state.commanderTaskId;
 
 		let tools = "read,bash,grep,find,ls";
-		const extensions = ["-e", tasksExtPath];
+		const extensions = ["-e", tasksExtPath, "-e", footerExtPath, "-e", memoryCycleExtPath];
 		if (commanderAvail) {
 			// Commander tools are extension-registered (not built-in), so they must NOT
 			// go in --tools (which only accepts built-in names and warns on unknowns).
@@ -340,7 +342,7 @@ export default function (pi: ExtensionAPI) {
 			task: Type.String({ description: "The complete task description for the subagent to perform" }),
 			name: Type.Optional(Type.String({ description: "Short role label (e.g. REVIEWER, SCOUT)" })),
 			summary: Type.Optional(Type.String({ description: "Short summary shown in widget (no markdown)" })),
-			model: Type.Optional(Type.String({ description: "Model to use (e.g. 'anthropic/claude-haiku-4-5', 'grok-4-fast'). Defaults to lightweight subagent model." })),
+			model: Type.Optional(Type.String({ description: "Model to use (e.g. 'anthropic/claude-haiku-4-5', 'x-ai/grok-4.1-fast'). Defaults to lightweight subagent model." })),
 			commanderTaskId: Type.Optional(Type.Number({ description: "Pre-assigned Commander task ID (avoids race conditions)" })),
 			autoRemove: Type.Optional(Type.Boolean({ description: "Auto-remove widget ~30s after done (default: true)" })),
 		}),
