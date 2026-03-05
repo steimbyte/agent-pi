@@ -31,6 +31,7 @@ import {
 	buildRestorationContent,
 	buildCycleMemoryInjection,
 } from "./lib/memory-cycle-helpers.ts";
+import { getProactiveCompactionPhase } from "./lib/context-gate.ts";
 
 // ── Tool Parameters ──────────────────────────────────────────────────
 
@@ -142,6 +143,52 @@ export default function (pi: ExtensionAPI) {
 	pi.registerMessageRenderer<CompactionCardDetails>("auto-compact-resume", renderCompactionCard);
 	pi.registerMessageRenderer<CompactionCardDetails>("memory-restored", renderCompactionCard);
 
+	// ── Proactive compaction state ───────────────────────────────
+	// Two-phase: prep at 70% (wrap up work), hard stop at 80% (call cycle_memory).
+	// Flags prevent repeated injection within the same compaction cycle.
+	let prepInjected = false;      // true after 70% prep message sent
+	let compactInjected = false;   // true after 80% hard-stop message sent
+
+	// ── Hook: before_agent_start — proactive compaction ──────────
+	// Fires before every agent turn. Checks context usage and injects
+	// messages to guide the LLM toward compaction before overflow.
+	pi.on("before_agent_start", async (_event, ctx) => {
+		const usage = ctx.getContextUsage();
+		const { phase, percent } = getProactiveCompactionPhase(usage?.percent);
+
+		if (phase === "compact" && !compactInjected) {
+			compactInjected = true;
+			ctx.ui.notify(
+				`Context overflow detected, Auto-compacting... (escape to cancel)`,
+				"info",
+			);
+			return {
+				message: {
+					customType: "auto-compact-gate",
+					content: `URGENT: Context window is at ${Math.round(percent)}% capacity. You MUST call cycle_memory immediately to prevent context overflow. Do not perform any other actions first. Call cycle_memory now.`,
+					display: false,
+				},
+			};
+		}
+
+		if (phase === "prep" && !prepInjected) {
+			prepInjected = true;
+			ctx.ui.notify(
+				`Context at ${Math.round(percent)}% -- wrapping up soon`,
+				"info",
+			);
+			return {
+				message: {
+					customType: "auto-compact-gate",
+					content: `Context window is at ${Math.round(percent)}% capacity. Start wrapping up your current work: commit any in-progress changes, save state, and prepare for a memory cycle. When you finish your current step, call cycle_memory. Do not start any new large operations.`,
+					display: false,
+				},
+			};
+		}
+
+		return {};
+	});
+
 	// Track cwd across compact events (before_compact → compact)
 	let preCompactCwd: string = "";
 
@@ -216,6 +263,10 @@ export default function (pi: ExtensionAPI) {
 	// auto_compaction_start/end events. We just provide the restoration context.
 	// For manual /compact: we send both a display card and restoration context.
 	pi.on("session_compact", async (event, ctx) => {
+		// Reset proactive compaction flags — allows next cycle to trigger
+		prepInjected = false;
+		compactInjected = false;
+
 		const { compactionEntry } = event;
 
 		const recentLogs = readRecentLogs();

@@ -16,7 +16,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth } from "@mariozechner/pi-tui";
 import { basename, dirname } from "node:path";
 import { applyExtensionDefaults } from "./lib/themeMap.ts";
-import { shouldWarnForCompaction, COMPACT_THRESHOLD } from "./lib/context-gate.ts";
+import { shouldWarnForCompaction, getProactiveCompactionPhase } from "./lib/context-gate.ts";
 
 /** Turn a model name like "Claude 4 Opus" into "opus 4" */
 function shortModelName(name: string | undefined): string {
@@ -74,23 +74,9 @@ export default function (pi: ExtensionAPI) {
 	// No tool_call blocking — core auto-compaction handles compaction properly
 	// via auto_compaction_start/end events which trigger UI rebuild.
 
-	let warnedThisTurn = false;
-	pi.on("before_agent_start", async (_event, ctx) => {
-		const usage = ctx.getContextUsage();
-		const result = shouldWarnForCompaction(usage?.percent);
-
-		if (result.level === "warn") {
-			if (!warnedThisTurn) {
-				warnedThisTurn = true;
-				ctx.ui.notify(
-					`Context: ${Math.round(usage?.percent ?? 0)}% — auto-compaction will trigger soon`,
-					"info",
-				);
-			}
-		} else if (result.level === "ok") {
-			warnedThisTurn = false;
-		}
-	});
+	// Footer no longer shows context warnings — memory-cycle.ts handles
+	// proactive compaction with two-phase inject (70% prep, 80% hard stop).
+	// The footer just renders the percentage in the status bar.
 
 	pi.on("session_shutdown", async () => {
 		if (branchUnsub) {
