@@ -1,0 +1,391 @@
+# ═══════════════════════════════════════════════════════════════════
+# Agent Security Policy
+# ═══════════════════════════════════════════════════════════════════
+# Controls what the agent can and cannot do. Loaded by security-guard.ts.
+# Edit this file to tune rules — run /security reload to apply changes.
+#
+# Severity levels:
+#   block  — hard stop, ask user for confirmation before proceeding
+#   warn   — notify user but allow execution
+#   log    — silently record in audit log
+# ═══════════════════════════════════════════════════════════════════
+
+# ── Dangerous Bash Commands ───────────────────────────────────────
+# Patterns matched against the full bash command string.
+# Uses regex syntax. Matched case-insensitively.
+blocked_commands:
+  # Destructive file operations
+  - pattern: "rm\\s+(-[a-zA-Z]*r[a-zA-Z]*\\s+|--recursive)"
+    description: "Recursive file deletion (rm -r / rm -rf)"
+    severity: block
+    category: destructive
+
+  - pattern: "rm\\s+(-[a-zA-Z]*f[a-zA-Z]*\\s+)"
+    description: "Forced file deletion (rm -f)"
+    severity: block
+    category: destructive
+
+  - pattern: "rm\\s+.*\\*"
+    description: "Wildcard file deletion"
+    severity: block
+    category: destructive
+
+  - pattern: "rmdir\\s+--ignore-fail-on-non-empty"
+    description: "Force directory removal"
+    severity: block
+    category: destructive
+
+  - pattern: "find\\s+.*-delete"
+    description: "find with -delete flag"
+    severity: block
+    category: destructive
+
+  - pattern: "find\\s+.*-exec\\s+rm"
+    description: "find with exec rm"
+    severity: block
+    category: destructive
+
+  # Permission escalation
+  - pattern: "chmod\\s+(777|666|a\\+[rwx])"
+    description: "Overly permissive chmod"
+    severity: warn
+    category: permissions
+
+  - pattern: "chown\\s+root"
+    description: "Changing ownership to root"
+    severity: warn
+    category: permissions
+
+  - pattern: "sudo\\s+"
+    description: "Sudo usage"
+    severity: block
+    category: permissions
+
+  # Pipe-to-shell (remote code execution)
+  - pattern: "curl\\s+.*\\|\\s*(bash|sh|zsh|python|perl|ruby|node)"
+    description: "Piping curl output to shell (remote code execution)"
+    severity: block
+    category: remote_exec
+
+  - pattern: "wget\\s+.*\\|\\s*(bash|sh|zsh|python|perl|ruby|node)"
+    description: "Piping wget output to shell (remote code execution)"
+    severity: block
+    category: remote_exec
+
+  - pattern: "curl\\s+.*-o\\s+.*&&\\s*(bash|sh|chmod)"
+    description: "Download-and-execute pattern"
+    severity: block
+    category: remote_exec
+
+  - pattern: "eval\\s*\\$\\(curl"
+    description: "Eval of remote content"
+    severity: block
+    category: remote_exec
+
+  # Environment/secret dumping
+  - pattern: "printenv"
+    description: "Dumping all environment variables"
+    severity: block
+    category: exfiltration
+
+  - pattern: "^env$"
+    description: "Dumping all environment variables"
+    severity: block
+    category: exfiltration
+
+  - pattern: "echo\\s+\\$[A-Z_]*(KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL|AUTH)"
+    description: "Echoing secret environment variables"
+    severity: block
+    category: exfiltration
+
+  - pattern: "cat\\s+.*\\.(env|pem|key|p12|pfx|jks)"
+    description: "Reading secret/key files"
+    severity: warn
+    category: exfiltration
+
+  # Disk/system destructive
+  - pattern: "mkfs\\."
+    description: "Formatting filesystem"
+    severity: block
+    category: destructive
+
+  - pattern: "dd\\s+.*of=/dev/"
+    description: "Direct disk write"
+    severity: block
+    category: destructive
+
+  - pattern: ":(){ :\\|:& };:"
+    description: "Fork bomb"
+    severity: block
+    category: destructive
+
+  # History/log tampering
+  - pattern: "history\\s+-c"
+    description: "Clearing shell history"
+    severity: warn
+    category: tampering
+
+  - pattern: "shred\\s+"
+    description: "Secure file deletion (shred)"
+    severity: block
+    category: destructive
+
+# ── Data Exfiltration Patterns ────────────────────────────────────
+# Patterns that detect data being sent to external services.
+exfiltration_patterns:
+  - pattern: "curl\\s+.*(-X\\s+POST|--data|--upload-file|-F\\s+)"
+    description: "HTTP POST/upload via curl"
+    severity: warn
+    category: exfiltration
+
+  - pattern: "curl\\s+.*(transfer\\.sh|paste\\.ee|pastebin\\.com|gist\\.github|0x0\\.st|ix\\.io|file\\.io|hastebin)"
+    description: "Upload to known paste/file sharing service"
+    severity: block
+    category: exfiltration
+
+  - pattern: "scp\\s+.*@"
+    description: "SCP file transfer to remote host"
+    severity: block
+    category: exfiltration
+
+  - pattern: "rsync\\s+.*@.*:"
+    description: "Rsync to remote host"
+    severity: block
+    category: exfiltration
+
+  - pattern: "base64\\s+.*\\|\\s*curl"
+    description: "Base64 encode piped to curl (exfiltration pattern)"
+    severity: block
+    category: exfiltration
+
+  - pattern: "nc\\s+(-[a-zA-Z]*\\s+)*[0-9]+\\.[0-9]+"
+    description: "Netcat connection to remote IP"
+    severity: block
+    category: exfiltration
+
+  - pattern: "openssl\\s+s_client"
+    description: "OpenSSL connection (potential data tunnel)"
+    severity: warn
+    category: exfiltration
+
+# ── Protected Paths ───────────────────────────────────────────────
+# File paths that should be protected from write/edit operations.
+# Read is warn-only (agent needs to read for context).
+protected_paths:
+  # SSH keys and config
+  - pattern: "(\\.ssh|ssh)/(id_|authorized_keys|known_hosts|config)"
+    severity: block
+    category: credentials
+    description: "SSH keys and configuration"
+
+  - pattern: "\\.ssh/"
+    severity: warn
+    category: credentials
+    description: "SSH directory access"
+
+  # Cloud credentials
+  - pattern: "\\.aws/(credentials|config)"
+    severity: block
+    category: credentials
+    description: "AWS credentials"
+
+  - pattern: "\\.azure/"
+    severity: warn
+    category: credentials
+    description: "Azure configuration"
+
+  - pattern: "\\.gcloud/"
+    severity: warn
+    category: credentials
+    description: "Google Cloud configuration"
+
+  # GPG/crypto keys
+  - pattern: "\\.gnupg/"
+    severity: block
+    category: credentials
+    description: "GPG keys and keyring"
+
+  # Environment files
+  - pattern: "\\.env(\\.local|\\.production|\\.staging)?$"
+    severity: warn
+    category: credentials
+    description: "Environment variable files"
+
+  # Key/certificate files
+  - pattern: "\\.(pem|key|p12|pfx|jks|keystore)$"
+    severity: warn
+    category: credentials
+    description: "Key/certificate files"
+
+  # Token/secret config
+  - pattern: "(secrets?|credentials?|tokens?)\\.ya?ml$"
+    severity: warn
+    category: credentials
+    description: "Secrets configuration files"
+
+  # NPM tokens, Docker config
+  - pattern: "\\.npmrc$"
+    severity: warn
+    category: credentials
+    description: "NPM configuration (may contain auth tokens)"
+
+  - pattern: "\\.docker/config\\.json"
+    severity: warn
+    category: credentials
+    description: "Docker configuration (may contain registry tokens)"
+
+  # Keychain/password stores
+  - pattern: "\\.password-store/"
+    severity: block
+    category: credentials
+    description: "Password store"
+
+  - pattern: "\\.(keychain|keychain-db)$"
+    severity: block
+    category: credentials
+    description: "macOS Keychain"
+
+# ── Prompt Injection Patterns ─────────────────────────────────────
+# Detected in file contents, tool outputs, and user messages.
+# These are the phrases an attacker embeds to hijack the agent.
+prompt_injection_patterns:
+  # Direct instruction override attempts
+  - pattern: "ignore\\s+(all\\s+)?(previous|prior|above|earlier)\\s+(instructions?|rules?|prompts?|guidelines?)"
+    severity: block
+    category: prompt_injection
+    description: "Attempt to override system instructions"
+
+  - pattern: "disregard\\s+(all\\s+)?(previous|prior|above|earlier)\\s+(instructions?|rules?|prompts?)"
+    severity: block
+    category: prompt_injection
+    description: "Attempt to disregard system instructions"
+
+  - pattern: "forget\\s+(all\\s+)?(previous|prior|above|earlier)\\s+(instructions?|rules?|context)"
+    severity: block
+    category: prompt_injection
+    description: "Attempt to reset agent context"
+
+  - pattern: "new\\s+system\\s+prompt"
+    severity: block
+    category: prompt_injection
+    description: "Attempt to inject new system prompt"
+
+  - pattern: "override\\s+(your|the|all)\\s+(rules?|instructions?|guidelines?|restrictions?|safety)"
+    severity: block
+    category: prompt_injection
+    description: "Attempt to override safety rules"
+
+  - pattern: "(you\\s+are|act\\s+as|pretend\\s+(to\\s+be|you\\s+are))\\s+(now\\s+)?(a\\s+)?(different|new|unrestricted|jailbroken)"
+    severity: block
+    category: prompt_injection
+    description: "Role hijacking attempt"
+
+  - pattern: "DAN\\s+(mode|prompt)|do\\s+anything\\s+now"
+    severity: block
+    category: prompt_injection
+    description: "Known jailbreak pattern (DAN)"
+
+  # Data extraction attempts
+  - pattern: "(dump|reveal|show|print|output|display|tell\\s+me)\\s+(your|the|all)\\s+(system\\s+prompt|instructions?|rules?|api\\s+keys?|secrets?|credentials?|tokens?|passwords?)"
+    severity: block
+    category: prompt_injection
+    description: "Attempt to extract system information"
+
+  - pattern: "(give|send|upload|post|transmit|exfiltrate|transfer)\\s+(me\\s+)?(all\\s+)?(your|the)\\s+(keys?|secrets?|credentials?|tokens?|passwords?|env|environment)"
+    severity: block
+    category: prompt_injection
+    description: "Attempt to exfiltrate credentials"
+
+  - pattern: "(upload|send|post|sync)\\s+(this|the|all|my|your)\\s+.*(to|at|on)\\s+(https?://|s3://|gs://|ftp://)"
+    severity: block
+    category: prompt_injection
+    description: "Attempt to upload data to external URL"
+
+  # Boundary/delimiter attacks
+  - pattern: "</?\\s*(system|instruction|prompt|admin|root)\\s*>"
+    severity: warn
+    category: prompt_injection
+    description: "XML-style prompt boundary injection"
+
+  - pattern: "\\[\\s*(SYSTEM|INST|ADMIN|ROOT|OVERRIDE)\\s*\\]"
+    severity: warn
+    category: prompt_injection
+    description: "Bracket-style prompt boundary injection"
+
+  - pattern: "###\\s*(SYSTEM|INSTRUCTION|NEW PROMPT|ADMIN)"
+    severity: warn
+    category: prompt_injection
+    description: "Markdown-style prompt boundary injection"
+
+  # Encoded/obfuscated attempts
+  - pattern: "(base64|rot13|hex)\\s*(decode|encode).*\\b(key|secret|token|password|credential)"
+    severity: warn
+    category: prompt_injection
+    description: "Encoded credential access attempt"
+
+# ── Allowlist ─────────────────────────────────────────────────────
+# Patterns that explicitly bypass security checks.
+# Use sparingly — each entry weakens the security posture.
+allowlist:
+  commands:
+    # Normal dev operations
+    - "git .*"
+    - "npm .*"
+    - "npx .*"
+    - "yarn .*"
+    - "pnpm .*"
+    - "bun .*"
+    - "node .*"
+    - "deno .*"
+    - "cargo .*"
+    - "python .*"
+    - "pip .*"
+    - "brew .*"
+    - "make .*"
+    - "cmake .*"
+    - "docker build.*"
+    - "docker run.*"
+    # File operations within project
+    - "cat .*"
+    - "head .*"
+    - "tail .*"
+    - "wc .*"
+    - "sort .*"
+    - "uniq .*"
+    - "diff .*"
+    - "grep .*"
+    # find is NOT allowlisted — blocked_commands rules catch dangerous find flags
+    # (find -delete, find -exec rm). Safe find commands pass through since they
+    # don't match any blocked patterns.
+    - "ls .*"
+    - "mkdir .*"
+    - "cp .*"
+    - "mv .*"
+    - "touch .*"
+    - "tee .*"
+    - "sed .*"
+    - "awk .*"
+    - "jq .*"
+    - "which .*"
+    - "type .*"
+    - "command -v .*"
+    - "tree .*"
+
+  paths:
+    # Project-local files are always fine
+    - "^\\.\\/.*"
+    - "^[a-zA-Z](?!:[\\\\/]|.*\\.ssh|.*\\.aws|.*\\.env).*"
+
+# ── Security Settings ─────────────────────────────────────────────
+settings:
+  # Enable/disable the entire security system
+  enabled: true
+  
+  # Max audit log size in bytes before rotation (1MB)
+  audit_log_max_bytes: 1048576
+  
+  # Whether to strip prompt injection from tool results (vs just warning)
+  strip_injections: true
+  
+  # Whether to show verbose threat details in block messages
+  verbose_blocks: true

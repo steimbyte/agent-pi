@@ -28,6 +28,7 @@
     "extensions/footer.ts",
     "extensions/memory-cycle.ts",
     "extensions/message-integrity-guard.ts",
+    "extensions/security-guard.ts",
     "extensions/web-test.ts",
     "extensions/plan-viewer.ts"
   ],
