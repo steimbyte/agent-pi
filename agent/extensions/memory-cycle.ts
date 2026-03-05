@@ -208,21 +208,16 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// ── Hook: session_compact ─────────────────────────────────────
-	// Fires AFTER compaction completes. We inject a memory-restore message
-	// so the agent knows what happened and can continue seamlessly.
-	// NOTE: During auto-compaction, footer.ts sends a richer resume message
-	// with the same session state. We only send here for manual /compact calls.
+	// Fires AFTER compaction completes (both manual /compact and core auto-compaction).
+	// We inject a memory-restore message so the agent knows what happened
+	// and can continue seamlessly.
+	//
+	// For core auto-compaction: the interactive-mode handles UI rebuild via
+	// auto_compaction_start/end events. We just provide the restoration context.
+	// For manual /compact: we send both a display card and restoration context.
 	pi.on("session_compact", async (event, ctx) => {
 		const { compactionEntry } = event;
 
-		// Skip if footer auto-compaction is handling the resume (avoid duplicate messages).
-		// Footer sets __piAutoCompacting during its compact flow.
-		if ((globalThis as any).__piAutoCompacting) {
-			ctx.ui.notify("Compaction complete — memory preserved", "success");
-			return;
-		}
-
-		// Manual compaction — send restoration context ourselves
 		const recentLogs = readRecentLogs();
 		const sessionState = readSessionState(preCompactCwd || ctx.cwd);
 
@@ -230,7 +225,6 @@ export default function (pi: ExtensionAPI) {
 		const parts = buildRestorationContent(sessionState);
 		if (recentLogs) parts.push("", recentLogs);
 
-		// Inject the restoration context as a follow-up so the agent is aware
 		const postUsage = ctx.getContextUsage();
 		const postPercent = postUsage?.percent ? Math.round(postUsage.percent) : 0;
 
@@ -359,9 +353,6 @@ export default function (pi: ExtensionAPI) {
 		const request = pendingCycleMemory;
 		pendingCycleMemory = null;
 
-		// Signal to session_compact hook that we're handling restoration ourselves
-		(globalThis as any).__piAutoCompacting = true;
-
 		ctx.ui.setStatus("memory-cycle", "Compacting context...");
 
 		ctx.compact({
@@ -386,8 +377,6 @@ export default function (pi: ExtensionAPI) {
 					"Continue where you left off. Resume the task you were working on before compaction. Do NOT ask the user what to do — just keep working.",
 				].join("\n");
 
-				// Clear auto-compaction flag and status
-				(globalThis as any).__piAutoCompacting = false;
 				ctx.ui.setStatus("memory-cycle", undefined);
 
 				// Show a visible notification in the status area
@@ -423,7 +412,6 @@ export default function (pi: ExtensionAPI) {
 				);
 			},
 			onError: (err: Error) => {
-				(globalThis as any).__piAutoCompacting = false;
 				ctx.ui.setStatus("memory-cycle", undefined);
 				ctx.ui.notify(`Memory Cycle failed: ${err.message}. Try /compact manually.`, "error");
 			},

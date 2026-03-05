@@ -1,5 +1,5 @@
-// ABOUTME: Tests for automatic compaction triggering from footer context-gate integration.
-// ABOUTME: Verifies warnings, ctx.compact() calls, and auto-resume behavior around context thresholds.
+// ABOUTME: Tests for footer context warning behavior.
+// ABOUTME: Verifies warnings are shown at threshold; no tool blocking or ctx.compact() calls.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -20,7 +20,6 @@ type TestContext = {
 	model: { name: string; provider?: string; id?: string };
 	cwd: string;
 	getContextUsage: () => { percent: number };
-	compact: ReturnType<typeof vi.fn>;
 };
 
 function createContext(overrides: { percent: number; ui?: ReturnType<typeof vi.fn> } = { percent: 75 }): TestContext {
@@ -29,200 +28,92 @@ function createContext(overrides: { percent: number; ui?: ReturnType<typeof vi.f
 			notify: overrides.ui ?? vi.fn(),
 		},
 		model: { name: "Claude Opus", provider: "anthropic", id: "claude" },
-		cwd: "/Users/ricardo/Projects/pi-vs-claude-code",
+		cwd: "/Users/ricardo/Projects/test",
 		getContextUsage: () => ({ percent: overrides.percent }),
-		compact: vi.fn((opts: any) => { if (opts.onComplete) opts.onComplete(); }),
 	};
 }
 
 function createExtension() {
 	const handlers: Record<string, (event: unknown, ctx: TestContext) => any> = {};
-	const sendMessage = vi.fn(async () => undefined);
 	const pi: any = {
 		on: (event: string, handler: any) => {
 			handlers[event] = handler;
 		},
-		sendMessage,
 	};
-	return { handlers, sendMessage, pi };
+	return { handlers, pi };
 }
 
-function tick() {
-	return new Promise((resolve) => setTimeout(resolve, 0));
-}
-
-describe("footer auto-compaction behavior", () => {
+describe("footer context warnings", () => {
 	beforeEach(() => {
 		vi.resetModules();
-		delete process.env.PI_SUBAGENT;
-		delete (globalThis as any).__piAutoCompacting;
 	});
 
-	it("blocks tool calls and triggers ctx.compact() at BLOCK threshold", async () => {
-		const { handlers, pi, sendMessage } = createExtension();
-		const extension = await import("../footer.ts");
-		extension.default(pi);
-
-		const notify = vi.fn();
-		const ctx = createContext({ percent: 90, ui: notify });
-		const result = await handlers["tool_call"]("tool_call", ctx);
-
-		expect(result).toEqual({
-			block: true,
-			reason:
-				"Context: 90% — Agent will Cycle-Memory now. Do NOT continue working until compaction is done.",
-		});
-
-		// Should call ctx.compact() directly
-		expect(ctx.compact).toHaveBeenCalledTimes(1);
-		expect(ctx.compact).toHaveBeenCalledWith(
-			expect.objectContaining({
-				customInstructions: expect.any(String),
-				onComplete: expect.any(Function),
-				onError: expect.any(Function),
-			}),
-		);
-
-		// Since mock auto-calls onComplete, resume messages should be sent:
-		// 1. Short display card (no options)
-		expect(sendMessage).toHaveBeenCalledWith(
-			expect.objectContaining({
-				customType: "auto-compact-resume",
-				display: true,
-			}),
-		);
-		// 2. Full context for agent (with triggerTurn)
-		expect(sendMessage).toHaveBeenCalledWith(
-			expect.objectContaining({
-				customType: "auto-compact-resume",
-				content: expect.stringContaining("Continue where you left off"),
-				display: false,
-			}),
-			{ deliverAs: "followUp", triggerTurn: true },
-		);
-
-		expect(notify).toHaveBeenCalledWith(expect.stringContaining("Cycling Memory now"), "info");
-	});
-
-	it("warn-level context only warns and does not auto-trigger compaction", async () => {
-		const { handlers, pi, sendMessage } = createExtension();
+	it("shows warning at 80% context usage", async () => {
+		const { handlers, pi } = createExtension();
 		const extension = await import("../footer.ts");
 		extension.default(pi);
 
 		const notify = vi.fn();
 		await handlers["before_agent_start"]("before_agent_start", createContext({ percent: 80, ui: notify }));
-		expect(notify).toHaveBeenCalledWith(expect.stringContaining("Agent will Cycle-Memory soon"), "info");
-		await tick();
-		expect(sendMessage).not.toHaveBeenCalled();
+		expect(notify).toHaveBeenCalledWith(expect.stringContaining("auto-compaction will trigger soon"), "info");
 	});
 
-	it("sends resume message with restored context on compaction complete", async () => {
-		const { handlers, pi, sendMessage } = createExtension();
-		const extension = await import("../footer.ts");
-		extension.default(pi);
-
-		const notify = vi.fn();
-		const ctx = createContext({ percent: 90, ui: notify });
-		await handlers["tool_call"]("tool_call", ctx);
-
-		// Mock auto-calls onComplete, so resume messages are sent immediately:
-		// Display card (short, visible to user)
-		expect(sendMessage).toHaveBeenCalledWith(
-			expect.objectContaining({
-				customType: "auto-compact-resume",
-				display: true,
-			}),
-		);
-		// Full context for agent
-		expect(sendMessage).toHaveBeenCalledWith(
-			expect.objectContaining({
-				customType: "auto-compact-resume",
-				content: expect.stringContaining("Auto-compaction complete"),
-				display: false,
-			}),
-			{ deliverAs: "followUp", triggerTurn: true },
-		);
-	});
-
-	it("sets and clears __piAutoCompacting flag during compact flow", async () => {
+	it("shows warning at 90% context usage (no blocking)", async () => {
 		const { handlers, pi } = createExtension();
 		const extension = await import("../footer.ts");
 		extension.default(pi);
 
-		const ctx = createContext({ percent: 90 });
-		// Override compact to capture the flag state during execution
-		let flagDuringCompact: boolean | undefined;
-		ctx.compact = vi.fn((opts: any) => {
-			flagDuringCompact = (globalThis as any).__piAutoCompacting;
-			if (opts.onComplete) opts.onComplete();
-		});
-
-		await handlers["tool_call"]("tool_call", ctx);
-
-		// Flag should have been true during compact
-		expect(flagDuringCompact).toBe(true);
-		// Flag should be cleared after complete
-		expect((globalThis as any).__piAutoCompacting).toBe(false);
+		const notify = vi.fn();
+		await handlers["before_agent_start"]("before_agent_start", createContext({ percent: 90, ui: notify }));
+		expect(notify).toHaveBeenCalledWith(expect.stringContaining("auto-compaction will trigger soon"), "info");
 	});
 
-	it("subagent blocks and auto-compacts at 80% threshold", async () => {
-		process.env.PI_SUBAGENT = "1";
-		const { handlers, pi, sendMessage } = createExtension();
+	it("does not show warning below threshold", async () => {
+		const { handlers, pi } = createExtension();
 		const extension = await import("../footer.ts");
 		extension.default(pi);
 
 		const notify = vi.fn();
-		const ctx = createContext({ percent: 80, ui: notify });
-		const result = await handlers["tool_call"]("tool_call", ctx);
-
-		expect(result).toEqual({
-			block: true,
-			reason: expect.stringContaining("Context: 80%"),
-		});
-
-		// Should call ctx.compact() directly
-		expect(ctx.compact).toHaveBeenCalledTimes(1);
+		await handlers["before_agent_start"]("before_agent_start", createContext({ percent: 79, ui: notify }));
+		expect(notify).not.toHaveBeenCalled();
 	});
 
-	it("subagent does not block below 80% threshold", async () => {
-		process.env.PI_SUBAGENT = "1";
-		const { handlers, pi, sendMessage } = createExtension();
+	it("warns only once per turn", async () => {
+		const { handlers, pi } = createExtension();
 		const extension = await import("../footer.ts");
 		extension.default(pi);
 
 		const notify = vi.fn();
-		const ctx = createContext({ percent: 79, ui: notify });
-		const result = await handlers["tool_call"]("tool_call", ctx);
-
-		expect(result).toEqual({ block: false });
-		await tick();
-		expect(sendMessage).not.toHaveBeenCalled();
+		const ctx = createContext({ percent: 85, ui: notify });
+		await handlers["before_agent_start"]("before_agent_start", ctx);
+		await handlers["before_agent_start"]("before_agent_start", ctx);
+		await handlers["before_agent_start"]("before_agent_start", ctx);
+		expect(notify).toHaveBeenCalledTimes(1);
 	});
 
-	it("subagent auto-continues after compaction", async () => {
-		process.env.PI_SUBAGENT = "1";
-		const { handlers, pi, sendMessage } = createExtension();
+	it("resets warning flag when context drops below threshold", async () => {
+		const { handlers, pi } = createExtension();
 		const extension = await import("../footer.ts");
 		extension.default(pi);
 
 		const notify = vi.fn();
-		const ctx = createContext({ percent: 80, ui: notify });
-		await handlers["tool_call"]("tool_call", ctx);
+		// First: warn
+		await handlers["before_agent_start"]("before_agent_start", createContext({ percent: 85, ui: notify }));
+		expect(notify).toHaveBeenCalledTimes(1);
 
-		// Since mock auto-calls onComplete, resume messages should already be sent
-		expect(sendMessage).toHaveBeenCalledWith(
-			expect.objectContaining({
-				customType: "auto-compact-resume",
-				display: true,
-			}),
-		);
-		expect(sendMessage).toHaveBeenCalledWith(
-			expect.objectContaining({
-				customType: "auto-compact-resume",
-				content: expect.stringContaining("Continue where you left off"),
-				display: false,
-			}),
-			{ deliverAs: "followUp", triggerTurn: true },
-		);
+		// Drop below threshold
+		await handlers["before_agent_start"]("before_agent_start", createContext({ percent: 50, ui: notify }));
+
+		// Should warn again
+		await handlers["before_agent_start"]("before_agent_start", createContext({ percent: 85, ui: notify }));
+		expect(notify).toHaveBeenCalledTimes(2);
+	});
+
+	it("does not register a tool_call handler (no blocking)", async () => {
+		const { handlers, pi } = createExtension();
+		const extension = await import("../footer.ts");
+		extension.default(pi);
+
+		expect(handlers["tool_call"]).toBeUndefined();
 	});
 });
