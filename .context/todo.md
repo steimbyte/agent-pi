@@ -1,17 +1,16 @@
-# Fix Logo Loading in Plan Viewer
+# Plan Viewer Test
 
-## Problem
-The plan viewer logo doesn't load because `plan-viewer.ts` resolves the logo path using `process.cwd()`:
-```ts
-const logoPath = join(process.cwd(), ".pi", "assets", "agent-logo.png");
-```
-This is fragile — `process.cwd()` can differ depending on where the user runs the agent from. The logo source lives at `agent/extensions/assets/agent-logo.png` (relative to the project root).
+## Tasks
+- [ ] Markdown view should be the default tab
+- [ ] Textarea should fill all available vertical space
+- [ ] No fixed 400px height — expands to viewport
+- [ ] Rendered view should still scroll normally
+- [x] Already completed item for visual check
 
-## Solution
-Use `import.meta.url` to resolve the logo path relative to the extension file itself — the same pattern used by other extensions (`agent-chain.ts`, `agent-team.ts`, etc.). This guarantees the logo is always found regardless of the user's working directory.
+## Notes
+> This is a test plan to verify the layout changes work correctly.
 
-## Steps
-
-- [ ] **1. Update `agent/extensions/plan-viewer.ts`** — Add `import { fileURLToPath } from "node:url"` and `import { dirname } from "node:path"`. In the logo-serving handler (line ~67), replace `join(process.cwd(), ".pi", "assets", "agent-logo.png")` with `join(dirname(fileURLToPath(import.meta.url)), "assets", "agent-logo.png")` so the path is resolved relative to the extension's own location.
-- [ ] **2. Verify the logo file exists** at `agent/extensions/assets/agent-logo.png` (already confirmed ✓).
-- [ ] **3. Test** — Run `/plan` or `show_plan` and confirm the logo renders in the browser viewer header.
+Some additional context:
+- The raw markdown editor should stretch edge to edge
+- Switching between Rendered ↔ Markdown should work smoothly
+- Footer buttons should remain fixed at the bottom

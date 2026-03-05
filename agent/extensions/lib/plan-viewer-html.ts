@@ -45,15 +45,18 @@ export function generatePlanViewerHTML(opts: {
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
+  html { height: 100%; }
+
   body {
     background: var(--bg);
     color: var(--text);
     font-family: var(--font);
     font-size: 15px;
     line-height: 1.65;
-    min-height: 100vh;
+    height: 100%;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
   }
 
   /* ── Header ──────────────────────────── */
@@ -118,10 +121,15 @@ export function generatePlanViewerHTML(opts: {
   /* ── Content Area ────────────────────── */
   .content {
     flex: 1;
-    max-width: 860px;
     width: 100%;
-    margin: 0 auto;
-    padding: 24px 16px 100px;
+    padding: 12px 24px 100px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .content.scrollable {
+    overflow: auto;
   }
 
   /* ── Markdown Rendering ──────────────── */
@@ -365,19 +373,26 @@ export function generatePlanViewerHTML(opts: {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 6px;
-    padding: 16px;
+    padding: 20px;
+    flex: 1;
+    min-height: 0;
+  }
+  .raw-view.active {
+    display: flex;
+    flex-direction: column;
   }
   .raw-view textarea {
     width: 100%;
-    min-height: 400px;
+    flex: 1;
+    min-height: 0;
     background: transparent;
     color: var(--text-muted);
     border: none;
     outline: none;
     font-family: var(--mono);
-    font-size: 12px;
+    font-size: 13px;
     line-height: 1.7;
-    resize: vertical;
+    resize: none;
   }
 
   /* ── Footer ──────────────────────────── */
@@ -509,7 +524,7 @@ export function generatePlanViewerHTML(opts: {
 
   /* ── Responsive ──────────────────────── */
   @media (max-width: 600px) {
-    .content { padding: 16px 12px 130px; }
+    .content { padding: 12px 12px 130px; }
     .header { padding: 10px 12px; }
     .footer { padding: 10px 12px; }
   }
@@ -530,15 +545,15 @@ export function generatePlanViewerHTML(opts: {
 <!-- View Toggle Bar -->
 <div class="toggle-bar">
   <div class="view-toggle">
-    <button class="active" id="btnRendered" onclick="setView('rendered')">Rendered</button>
-    <button id="btnRaw" onclick="setView('raw')">Markdown</button>
+    <button id="btnRendered" onclick="setView('rendered')">Rendered</button>
+    <button class="active" id="btnRaw" onclick="setView('raw')">Markdown</button>
   </div>
 </div>
 
 <!-- Content -->
 <div class="content">
-  <div id="renderedView" class="markdown-body"></div>
-  <div id="rawView" class="raw-view">
+  <div id="renderedView" class="markdown-body" style="display:none;"></div>
+  <div id="rawView" class="raw-view active">
     <textarea id="rawEditor" spellcheck="false"></textarea>
   </div>
 </div>
@@ -571,7 +586,7 @@ export function generatePlanViewerHTML(opts: {
   let markdown = ${escapedMarkdown};
   let originalMarkdown = markdown;
   let modified = false;
-  let currentView = 'rendered';
+  let currentView = 'raw';
   let answers = {};  // questionId -> answer text
   let questionCount = 0;
 
@@ -908,9 +923,11 @@ export function generatePlanViewerHTML(opts: {
     const btnR = document.getElementById('btnRendered');
     const btnM = document.getElementById('btnRaw');
 
+    const content = document.querySelector('.content');
     if (view === 'raw') {
       rendered.style.display = 'none';
-      raw.style.display = 'block';
+      raw.classList.add('active');
+      content.classList.remove('scrollable');
       btnR.classList.remove('active');
       btnM.classList.add('active');
       document.getElementById('rawEditor').value = markdown;
@@ -918,7 +935,8 @@ export function generatePlanViewerHTML(opts: {
       // Sync from raw editor if switching back
       markdown = document.getElementById('rawEditor').value;
       rendered.style.display = 'block';
-      raw.style.display = 'none';
+      raw.classList.remove('active');
+      content.classList.add('scrollable');
       btnR.classList.add('active');
       btnM.classList.remove('active');
       render();
