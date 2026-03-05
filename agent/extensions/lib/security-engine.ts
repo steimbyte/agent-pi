@@ -310,6 +310,24 @@ function escapeRegex(str: string): string {
 	return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** Max input length for regex scanning — prevents ReDoS on huge inputs */
+const MAX_SCAN_LENGTH = 50_000;
+
+/**
+ * Safe regex exec — truncates excessively long inputs to prevent ReDoS.
+ * User-defined YAML patterns could theoretically cause catastrophic backtracking;
+ * this limits the damage by capping input length.
+ */
+function safeExec(re: RegExp, text: string): RegExpExecArray | null {
+	const input = text.length > MAX_SCAN_LENGTH ? text.slice(0, MAX_SCAN_LENGTH) : text;
+	return re.exec(input);
+}
+
+function safeTest(re: RegExp, text: string): boolean {
+	const input = text.length > MAX_SCAN_LENGTH ? text.slice(0, MAX_SCAN_LENGTH) : text;
+	return re.test(input);
+}
+
 /**
  * Load security policy from the YAML file.
  * Searches: .pi/security-policy.yaml, then ~/.pi/agent/.pi/security-policy.yaml
@@ -378,7 +396,7 @@ export function getDefaultPolicy(): SecurityPolicy {
 function isAllowlisted(text: string, allowlist: string[]): boolean {
 	for (const pattern of allowlist) {
 		try {
-			if (getRegex(`^${pattern}$`, "i").test(text.trim())) return true;
+			if (safeTest(getRegex(`^${pattern}$`, "i"), text.trim())) return true;
 		} catch {
 			// Skip invalid patterns
 		}
@@ -408,7 +426,7 @@ function scanSingleCommand(trimmed: string, policy: SecurityPolicy): ThreatResul
 	// Scan against blocked commands
 	for (const rule of policy.blocked_commands) {
 		const re = getRegex(rule.pattern, "i");
-		const match = re.exec(trimmed);
+		const match = safeExec(re, trimmed);
 		if (match) {
 			threats.push({
 				severity: rule.severity,
@@ -423,7 +441,7 @@ function scanSingleCommand(trimmed: string, policy: SecurityPolicy): ThreatResul
 	// Scan against exfiltration patterns
 	for (const rule of policy.exfiltration_patterns) {
 		const re = getRegex(rule.pattern, "i");
-		const match = re.exec(trimmed);
+		const match = safeExec(re, trimmed);
 		if (match) {
 			threats.push({
 				severity: rule.severity,
@@ -506,7 +524,7 @@ export function scanFilePath(
 
 	for (const rule of policy.protected_paths) {
 		const re = getRegex(rule.pattern, "i");
-		if (re.test(expanded) || re.test(normalized) || re.test(path)) {
+		if (safeTest(re, expanded) || safeTest(re, normalized) || safeTest(re, path)) {
 			// Downgrade severity for reads — agent needs to read for context
 			const severity: Severity =
 				operation === "read"
@@ -538,7 +556,7 @@ export function scanContent(text: string, policy: SecurityPolicy): ThreatResult[
 
 	for (const rule of policy.prompt_injection_patterns) {
 		const re = getRegex(rule.pattern, "i");
-		const match = re.exec(text);
+		const match = safeExec(re, text);
 		if (match) {
 			threats.push({
 				severity: rule.severity,
@@ -563,7 +581,7 @@ export function scanUrl(url: string, policy: SecurityPolicy): ThreatResult[] {
 
 	for (const rule of policy.exfiltration_patterns) {
 		const re = getRegex(rule.pattern, "i");
-		const match = re.exec(url);
+		const match = safeExec(re, url);
 		if (match) {
 			threats.push({
 				severity: rule.severity,
@@ -597,7 +615,7 @@ export function stripInjections(
 		const re = getRegex(rule.pattern, "gi");
 		let match: RegExpExecArray | null;
 
-		while ((match = re.exec(cleaned)) !== null) {
+		while ((match = safeExec(re, cleaned)) !== null) {
 			redactions.push({
 				severity: rule.severity,
 				category: rule.category,
@@ -611,7 +629,7 @@ export function stripInjections(
 			// Replace the entire line containing the injection
 			const lines = cleaned.split("\n");
 			const cleanedLines = lines.map((line) => {
-				if (re.test(line)) {
+				if (safeTest(re, line)) {
 					return `[⚠️ REDACTED: ${rule.description}]`;
 				}
 				return line;
@@ -628,6 +646,45 @@ export function stripInjections(
 // ═══════════════════════════════════════════════════════════════════
 // Utility: Format threat for display
 // ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Validate a security policy for common issues.
+ * Returns a list of warnings (empty = valid).
+ */
+export function validatePolicy(policy: SecurityPolicy): string[] {
+	const warnings: string[] = [];
+
+	if (!policy.settings.enabled) {
+		warnings.push("Security guard is DISABLED (settings.enabled = false)");
+	}
+	if (policy.blocked_commands.length === 0) {
+		warnings.push("No blocked command rules defined");
+	}
+	if (policy.prompt_injection_patterns.length === 0) {
+		warnings.push("No prompt injection patterns defined");
+	}
+	if (policy.protected_paths.length === 0) {
+		warnings.push("No protected path rules defined");
+	}
+
+	// Check for regex compilation errors
+	for (const rule of [...policy.blocked_commands, ...policy.exfiltration_patterns, ...policy.protected_paths, ...policy.prompt_injection_patterns]) {
+		try {
+			new RegExp(rule.pattern, "i");
+		} catch {
+			warnings.push(`Invalid regex in rule "${rule.description}": ${rule.pattern}`);
+		}
+	}
+
+	// Check for overbroad allowlist entries
+	for (const pattern of policy.allowlist.commands) {
+		if (pattern === ".*" || pattern === ".+") {
+			warnings.push(`Overbroad allowlist command pattern: "${pattern}" — matches everything`);
+		}
+	}
+
+	return warnings;
+}
 
 export function formatThreat(threat: ThreatResult, verbose: boolean): string {
 	const icon = threat.severity === "block" ? "🛑" : threat.severity === "warn" ? "⚠️" : "📝";

@@ -77,7 +77,7 @@ class AuditLogger {
 				const stat = statSync(this.logPath);
 				if (stat.size >= this.maxBytes) {
 					try {
-						renameSync(this.logPath, this.logPath + ".bak");
+						renameSync(this.logPath, `${this.logPath}.${Date.now()}.bak`);
 					} catch {}
 				}
 			}
@@ -212,7 +212,7 @@ export default function securityGuard(pi: ExtensionAPI) {
 		if (!policy.settings.enabled) return { block: false };
 
 		const { toolName } = event;
-		const params = event.arguments || event.params || {};
+		const params = event.arguments || event.params || event.input || {};
 		const allThreats: ThreatResult[] = [];
 
 		// ── Bash commands ──────────────────────────────────────────
@@ -347,7 +347,7 @@ export default function securityGuard(pi: ExtensionAPI) {
 		const messages = event.messages;
 		if (!messages || messages.length === 0) return;
 
-		let modified = false;
+		let anyModified = false;
 		const repairedMessages = messages.map((msg: any) => {
 			// Only scan toolResult messages — these come from files/commands the agent read
 			if (msg.role !== "toolResult") return msg;
@@ -356,6 +356,7 @@ export default function securityGuard(pi: ExtensionAPI) {
 			const content = msg.content;
 			if (!Array.isArray(content)) return msg;
 
+			let msgModified = false;
 			const newContent = content.map((block: any) => {
 				if (block.type !== "text" || !block.text) return block;
 
@@ -400,7 +401,8 @@ export default function securityGuard(pi: ExtensionAPI) {
 				}
 
 				if (cleaned !== block.text) {
-					modified = true;
+					msgModified = true;
+					anyModified = true;
 					console.error(
 						`[security-guard] Stripped ${redactions.length} prompt injection(s) from tool result (${msg.toolName || "unknown"})`,
 					);
@@ -410,13 +412,13 @@ export default function securityGuard(pi: ExtensionAPI) {
 				return block;
 			});
 
-			if (modified) {
+			if (msgModified) {
 				return { ...msg, content: newContent };
 			}
 			return msg;
 		});
 
-		if (modified) {
+		if (anyModified) {
 			return { messages: repairedMessages };
 		}
 
@@ -430,8 +432,12 @@ export default function securityGuard(pi: ExtensionAPI) {
 	pi.on("before_agent_start", async (event, _ctx) => {
 		if (!policy.settings.enabled) return {};
 
-		// Append security addendum to whatever system prompt is active
+		// Append security addendum to whatever system prompt is active.
+		// Check if addendum is already present (idempotent — safe against double-fire).
 		const existingPrompt = event.systemPrompt || "";
+		if (existingPrompt.includes("## Security Policy (Active)")) {
+			return {}; // Already present — another hook or session restore included it
+		}
 		return {
 			systemPrompt: existingPrompt + SECURITY_PROMPT_ADDENDUM,
 		};
