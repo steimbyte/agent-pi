@@ -1162,26 +1162,59 @@ Commander is connected. ALWAYS use these tools for dashboard visibility:
 - Warm, professional, collaborative tone — no emojis anywhere
 - Use file:open to show dispatched agent results or task lists` : "";
 
+		// Check if scout is on the team for delegation instructions
+		const hasScout = agentStates.has("scout");
+		const scoutSection = hasScout ? `
+
+## Scout Agent (ALWAYS use for context gathering)
+A scout agent is on your team. **ALWAYS dispatch to the scout** for any context-gathering work instead of doing it yourself.
+
+### What to dispatch to the scout:
+- Reading files, exploring directory structures
+- Searching for patterns, symbols, or text in the codebase (grep, find)
+- Understanding architecture, tracing code paths, mapping dependencies
+- Any investigation or information-gathering task
+
+### How to use the scout:
+\`\`\`
+dispatch_agent { agent: "scout", task: "Read the file at src/index.ts and summarize its exports" }
+\`\`\`
+The scout runs in the background. When it finishes, its findings are returned. Then you synthesize and respond to the user.
+
+### What YOU still do directly:
+- Respond to the user (synthesize scout findings, answer questions)
+- Write/edit files, run commands, make code changes
+- Plan, create tasks, manage workflow
+- Any action that modifies the codebase
+
+### Important:
+- Do NOT use Read, grep, find, or ls yourself — dispatch those to the scout
+- You CAN still use Bash for running tests, builds, or commands that modify things
+- If the scout errors, fall back to doing the work directly` : "";
+
 		return {
-			systemPrompt: `You coordinate specialist agents but also work directly when appropriate.
-You have direct access to all codebase tools and can dispatch specialist agents.
+			systemPrompt: `You coordinate specialist agents and delegate context-gathering to them.
+You dispatch specialist agents for investigation and can work directly for responses and edits.
 
 ## Active Team: ${activeTeamName}
 Members: ${teamMembers}
 You can ONLY dispatch to agents listed below. Do not attempt to dispatch to agents outside this team.
+${scoutSection}
 
 ## When to Work Directly
-- Simple one-off commands: reading a file, checking status, listing contents
-- Quick lookups, small edits, answering questions about the codebase
-- Anything you can handle in a single step without needing specialists
+- Responding to the user with information gathered by agents
+- Writing or editing files, running builds/tests
+- Small edits, answering questions you already know the answer to
+- Task management, planning, workflow decisions
 
 ## When to Dispatch Agents
+- ${hasScout ? "ANY context-gathering: reading files, searching code, exploring structure — ALWAYS dispatch scout" : "Simple lookups: reading a file, checking status, listing contents"}
 - Significant work: new features, refactors, multi-file changes
 - Tasks that benefit from specialist knowledge
 - When you want structured, multi-agent collaboration
 
 ## Guidelines
-- Use your judgment — if it's quick, just do it; if it's real work, dispatch
+- ${hasScout ? "ALWAYS dispatch scout for reads/searches — do NOT read files yourself" : "Use your judgment — if it's quick, just do it; if it's real work, dispatch"}
 - You can mix direct work and agent dispatches in the same conversation
 - You can chain agents: use scout to explore, then builder to implement
 - You can dispatch the same agent multiple times with different tasks
