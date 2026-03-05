@@ -320,14 +320,7 @@ export default function messageIntegrityGuard(pi: ExtensionAPI) {
 			totalRepairs += repairs.length;
 			repairLog.push(...repairs);
 
-			// Notify user that we fixed something
-			const summary = repairs.length === 1
-				? repairs[0]
-				: `Fixed ${repairs.length} message integrity issues`;
-
-			ctx.ui.notify(`🔧 ${summary}`, "warning");
-
-			// Log details for debugging
+			// Log details for debugging (no user-facing notification -- this is routine self-healing)
 			for (const repair of repairs) {
 				console.error(`[message-integrity-guard] ${repair}`);
 			}
