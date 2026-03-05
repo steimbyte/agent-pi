@@ -192,6 +192,11 @@ export default function (pi: ExtensionAPI) {
 	// Track cwd across compact events (before_compact → compact)
 	let preCompactCwd: string = "";
 
+	// When cycle_memory triggers compaction, suppress redundant UI from
+	// session_before_compact and session_compact — the cycle_memory
+	// onComplete handler shows a single clean card instead.
+	let cycleMemoryActive = false;
+
 	// ── Hook: session_before_compact ──────────────────────────────
 	// Runs as part of pi's native compaction (both auto and manual /compact).
 	// We extract session insights and save them to disk BEFORE the context
@@ -243,7 +248,10 @@ export default function (pi: ExtensionAPI) {
 				filesRead: readFiles.slice(0, 10),
 			});
 
-			ctx.ui.notify("Memory saved (daily log + session state)", "info");
+			// Only show notification for manual /compact — cycle_memory shows its own card
+			if (!cycleMemoryActive) {
+				ctx.ui.notify("Memory saved (daily log + session state)", "info");
+			}
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
 			console.error(`[memory-cycle] Pre-compact save failed: ${msg}`);
@@ -279,30 +287,39 @@ export default function (pi: ExtensionAPI) {
 		const postUsage = ctx.getContextUsage();
 		const postPercent = postUsage?.percent ? Math.round(postUsage.percent) : 0;
 
-		// Short card visible to user
-		pi.sendMessage(
-			{
-				customType: "memory-restored",
-				content: `Context compacted -- now at ${postPercent}%.`,
-				display: true,
-				details: {
-					source: "manual",
-					postPercent,
-					task: sessionState?.currentTask,
-					recentFiles: sessionState?.filesEdited,
-				} satisfies CompactionCardDetails,
-			},
-		);
+		// When cycle_memory is driving compaction, skip the display card here —
+		// the cycle_memory onComplete handler shows a single clean card instead.
+		// Only show the card for manual /compact or core auto-compaction.
+		if (!cycleMemoryActive) {
+			// Short card visible to user
+			pi.sendMessage(
+				{
+					customType: "memory-restored",
+					content: `Context compacted -- now at ${postPercent}%.`,
+					display: true,
+					details: {
+						source: "manual",
+						postPercent,
+						task: sessionState?.currentTask,
+						recentFiles: sessionState?.filesEdited,
+					} satisfies CompactionCardDetails,
+				},
+			);
+		}
 
 		// Full restoration context for the agent (not displayed)
-		pi.sendMessage(
-			{
-				customType: "memory-restored",
-				content: parts.join("\n"),
-				display: false,
-			},
-			{ deliverAs: "nextTurn" },
-		);
+		// Always send this — cycle_memory onComplete will add its own,
+		// but for manual /compact this is the only restoration message.
+		if (!cycleMemoryActive) {
+			pi.sendMessage(
+				{
+					customType: "memory-restored",
+					content: parts.join("\n"),
+					display: false,
+				},
+				{ deliverAs: "nextTurn" },
+			);
+		}
 	});
 
 
@@ -404,12 +421,18 @@ export default function (pi: ExtensionAPI) {
 		const request = pendingCycleMemory;
 		pendingCycleMemory = null;
 
+		// Signal to session_before_compact and session_compact hooks
+		// to suppress their redundant UI — we show a single clean card.
+		cycleMemoryActive = true;
+
 		ctx.ui.setStatus("memory-cycle", "Compacting context...");
 
 		ctx.compact({
 			customInstructions: request.instructions
 				?? "Create a comprehensive summary preserving all goals, decisions, progress, file changes, and context needed to continue work seamlessly.",
 			onComplete: () => {
+				cycleMemoryActive = false;
+
 				const postUsage = ctx.getContextUsage();
 				const postPercent = postUsage?.percent ? Math.round(postUsage.percent) : 0;
 
@@ -430,15 +453,8 @@ export default function (pi: ExtensionAPI) {
 
 				ctx.ui.setStatus("memory-cycle", undefined);
 
-				// Show a visible notification in the status area
-				ctx.ui.notify(
-					`Memory cycle complete -- context now at ${postPercent}%`,
-					"info",
-				);
-
-				// Send a SHORT display card (visible to user) + FULL context (for agent)
-				// The display message renders via registerMessageRenderer as a dark card.
-				// The context message triggers a new agent turn with full restoration data.
+				// Single clean display card — no separate notify() to avoid
+				// duplicate text noise in the terminal.
 				pi.sendMessage(
 					{
 						customType: "memory-cycle-resume",
@@ -453,6 +469,7 @@ export default function (pi: ExtensionAPI) {
 					},
 				);
 
+				// Full restoration context for the agent (not displayed)
 				pi.sendMessage(
 					{
 						customType: "memory-cycle-resume",
@@ -463,6 +480,7 @@ export default function (pi: ExtensionAPI) {
 				);
 			},
 			onError: (err: Error) => {
+				cycleMemoryActive = false;
 				ctx.ui.setStatus("memory-cycle", undefined);
 				ctx.ui.notify(`Memory Cycle failed: ${err.message}. Try /compact manually.`, "error");
 			},
