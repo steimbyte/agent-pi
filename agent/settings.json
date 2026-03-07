@@ -31,7 +31,11 @@
     "extensions/security-guard.ts",
     "extensions/web-test.ts",
     "extensions/plan-viewer.ts",
-    "extensions/secure.ts"
+    "extensions/secure.ts",
+    "extensions/tool-registry.ts",
+    "extensions/tool-search.ts",
+    "extensions/tool-caller.ts",
+    "extensions/lean-tools.ts"
   ],
   "editorPaddingX": 2,
   "showHardwareCursor": true,
