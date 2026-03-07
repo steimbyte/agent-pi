@@ -1,15 +1,26 @@
-# Verification and Implementation Plan 
+# Fix Plan/Spec Approval UI
 
-## Remove commander dependcey
+**Problem:** When a plan or spec is approved, the entire page content is replaced with a grayed-out "Plan approved / You can close this tab" message. The user wants the full plan/spec to remain visible but in a read-only state with an approved header banner.
 
-- [x] Inspect the current repo to identify where the Pi extension and Commander app/file-viewer implementations live.
-- [x] Compare current code paths for `commander_session file:open` and the Commander app file viewer to determine whether the old external viewer was replaced by an in-app local web overlay.
-- [x] Check git status and modified files in both likely directories to see where the recent file-viewer changes actually landed.
-- [x] Summarize the result with concrete evidence: whether the replacement exists, what is still using MCP, and whether edits appear to be in the intended repo.
-- [ ] The goal is to remove the dep on commander for the file viewer and instead copy our plan viewer/ spec viewer and use this as the base for a file viewer/editor light wight to open files from the cli directly
-  - [x] Review existing `plan-viewer` / `spec-viewer` patterns and identify the minimal reusable structure.
-  - [x] Implement a native `show_file` viewer/editor tool in `agent/extensions`.
-  - [x] Add the supporting HTML generator for the new local file viewer.
-  - [x] Update prompts/docs to reference the local file viewer where safe and appropriate.
-  - [x] Verify the new flow with focused tests or inspection.
-  - [ ] Present completion report.
+**Solution:** After approval, instead of replacing `document.body.innerHTML`, transition the viewer into an "approved" state that:
+1. Shows a prominent "✓ APPROVED" banner at the top
+2. Renders the full plan/spec content below (read-only)
+3. Disables all editing, commenting, drag-and-drop, and interactive controls
+4. Removes the footer action buttons (Approve/Decline/etc.)
+
+## Plan
+
+- [ ] **Plan Viewer** (`agent/extensions/lib/plan-viewer-html.ts`): Update the `sendResult` function's approved branch
+  - Add CSS for `.approved-banner` header style (green accent, prominent)
+  - Add CSS for `.approved-state` body class that disables all interactions
+  - On approval: add `approved-state` class to body, insert approved banner, hide footer, disable checkboxes/editing/drag-and-drop, hide toggle bar
+  - Keep content fully visible and scrollable (NOT grayed out)
+
+- [ ] **Spec Viewer** (`agent/extensions/lib/spec-viewer-html.ts`): Update the `sendResult` function's approved branch
+  - Add same `.approved-banner` CSS styling
+  - Add `.approved-state` class that disables commenting, editing, step navigation
+  - On approval: add approved banner, hide footer, disable comment popups and commentable hover effects
+  - Keep all spec documents navigable (step bar still works for reading) but non-editable
+  - Hide comment sidebar and toggle bar
+
+- [ ] **Test both viewers** by opening them and verifying the approval flow

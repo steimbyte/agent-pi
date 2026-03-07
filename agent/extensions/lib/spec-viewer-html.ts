@@ -657,6 +657,63 @@ export function generateSpecViewerHTML(opts: {
   }
   .toast.show { opacity: 1; }
 
+  /* ── Approved State ──────────────────── */
+  .approved-banner {
+    background: var(--surface);
+    border: 1px solid var(--success);
+    border-left: 4px solid var(--success);
+    border-radius: 6px;
+    margin: 12px 16px 0;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .approved-banner .approved-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--success);
+    color: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .approved-banner .approved-text {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--success);
+    font-family: var(--mono);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .approved-banner .approved-sub {
+    font-size: 12px;
+    color: var(--text-dim);
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    margin-top: 2px;
+  }
+
+  /* When approved, disable all interactive elements */
+  body.approved-state .footer-wrapper { display: none; }
+  body.approved-state .toggle-bar { display: none; }
+  body.approved-state .header .modified-badge { display: none !important; }
+  body.approved-state .header .comment-count { display: none !important; }
+  body.approved-state .comment-sidebar { display: none !important; }
+  body.approved-state .comment-input-popup { display: none !important; }
+  body.approved-state .commentable { cursor: default; pointer-events: none; }
+  body.approved-state .commentable:hover { border-left-color: transparent; background: transparent; }
+  body.approved-state .commentable.has-comment:hover { border-left-color: var(--comment-accent); }
+  body.approved-state .commentable .comment-badge { display: none !important; }
+  body.approved-state .content { padding-bottom: 24px; }
+  body.approved-state .step-item { cursor: pointer; }
+
   /* ── Responsive ──────────────────────── */
   @media (max-width: 700px) {
     .content { padding: 12px 12px 100px; }
@@ -1158,11 +1215,42 @@ export function generateSpecViewerHTML(opts: {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     }).then(function() {
-      var msg = action === 'approved' ? 'Spec approved' :
-                action === 'changes_requested' ? 'Changes requested' : 'Closed';
-      document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:var(--text-muted);font-family:var(--font);">' +
-        '<div style="text-align:center"><p style="font-size:20px;margin-bottom:8px;">' + msg +
-        '</p><p style="color:var(--text-dim);">You can close this tab.</p></div></div>';
+      if (action === 'approved') {
+        // Show approved state: banner + full read-only content
+        var banner = document.createElement('div');
+        banner.className = 'approved-banner';
+        banner.innerHTML = '<div class="approved-icon">✓</div>' +
+          '<div><div class="approved-text">Spec Approved</div>' +
+          '<div class="approved-sub">The agent will now proceed with implementation.</div></div>';
+        var header = document.querySelector('.header');
+        header.parentNode.insertBefore(banner, header.nextSibling);
+
+        // Switch to approved state (disables interactivity via CSS)
+        document.body.classList.add('approved-state');
+
+        // Update header badge
+        var badge = document.querySelector('.header .badge');
+        if (badge) {
+          badge.textContent = 'APPROVED';
+          badge.style.color = 'var(--success)';
+          badge.style.borderColor = 'var(--success)';
+        }
+
+        // Ensure rendered view is showing (not raw)
+        if (currentView === 'raw') {
+          setView('rendered');
+        }
+
+        // Close comment sidebar and popup
+        closeCommentPopup();
+        document.getElementById('commentSidebar').classList.remove('visible');
+      } else {
+        // Closed/declined/changes_requested — show simple message
+        var msg = action === 'changes_requested' ? 'Changes requested' : 'Closed';
+        document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:var(--text-muted);font-family:var(--font);">' +
+          '<div style="text-align:center"><p style="font-size:20px;margin-bottom:8px;">' + msg +
+          '</p><p style="color:var(--text-dim);">You can close this tab.</p></div></div>';
+      }
     }).catch(function() {
       showToast('Failed to send result');
     });

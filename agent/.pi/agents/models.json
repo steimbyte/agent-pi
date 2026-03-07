@@ -9,8 +9,8 @@
       "model": "grok-4.1-fast"
     },
     "builder": {
-      "provider": "mercury",
-      "model": "mercury-2"
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5"
     },
     "reviewer": {
       "provider": "anthropic",
