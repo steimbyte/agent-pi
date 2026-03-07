@@ -682,6 +682,147 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	pi.registerCommand("performance", {
+		description: "Optimize this codebase for performance — profile bottlenecks, stress-test, and build an optimization plan",
+		handler: async (args, ctx) => {
+			widgetCtx = ctx;
+			const scope = (args || "").trim();
+			const scopeHint = scope ? ` (scope: ${scope})` : "";
+
+			ctx.ui.notify(`Starting performance analysis${scopeHint}...`, "info");
+
+			// Find performance chain
+			const perfChain = chains.find(c => c.name === "performance");
+			if (!perfChain) {
+				ctx.ui.notify("Performance chain not found in .pi/agents/agent-chain.yaml", "error");
+				return;
+			}
+
+			// Activate the performance chain
+			activateChain(perfChain);
+
+			// Build task string with optional scope
+			const task = scope
+				? `Optimize this codebase for performance. Scope: ${scope}`
+				: "Optimize this codebase for performance";
+
+			// Run the chain
+			const result = await runChain(task, ctx);
+
+			// Hide chain widget — performance analysis is done, result goes to file
+			widgetCtx.ui.setWidget("agent-chain", undefined);
+
+			if (!result.success) {
+				ctx.ui.notify(`Performance analysis failed: ${result.output.slice(0, 200)}`, "error");
+				return;
+			}
+
+			// Write report file
+			const reportPath = join(ctx.cwd, ".pi", "performance-report.md");
+			const reportDir = dirname(reportPath);
+			if (!existsSync(reportDir)) {
+				mkdirSync(reportDir, { recursive: true });
+			}
+			writeFileSync(reportPath, result.output, "utf-8");
+
+			ctx.ui.notify(`Performance analysis complete! Report saved to ${reportPath}`, "success");
+		},
+	});
+
+	pi.registerCommand("sentry-setup", {
+		description: "Verify Sentry CLI setup — check auth, project linking, SDK integration, and DSN configuration",
+		handler: async (args, ctx) => {
+			widgetCtx = ctx;
+			const scope = (args || "").trim();
+			const scopeHint = scope ? ` (scope: ${scope})` : "";
+
+			ctx.ui.notify(`Starting Sentry setup check${scopeHint}...`, "info");
+
+			// Find sentry-setup chain
+			const sentrySetupChain = chains.find(c => c.name === "sentry-setup");
+			if (!sentrySetupChain) {
+				ctx.ui.notify("sentry-setup chain not found in .pi/agents/agent-chain.yaml", "error");
+				return;
+			}
+
+			// Activate the sentry-setup chain
+			activateChain(sentrySetupChain);
+
+			// Build task string with optional scope
+			const task = scope
+				? `Verify Sentry setup for this project. Scope: ${scope}`
+				: "Verify Sentry setup for this project";
+
+			// Run the chain
+			const result = await runChain(task, ctx);
+
+			// Hide chain widget
+			widgetCtx.ui.setWidget("agent-chain", undefined);
+
+			if (!result.success) {
+				ctx.ui.notify(`Sentry setup check failed: ${result.output.slice(0, 200)}`, "error");
+				return;
+			}
+
+			// Write report file
+			const reportPath = join(ctx.cwd, ".pi", "sentry-setup-report.md");
+			const reportDir = dirname(reportPath);
+			if (!existsSync(reportDir)) {
+				mkdirSync(reportDir, { recursive: true });
+			}
+			writeFileSync(reportPath, result.output, "utf-8");
+
+			ctx.ui.notify(`Sentry setup check complete! Report saved to ${reportPath}`, "success");
+		},
+	});
+
+	pi.registerCommand("sentry-logs", {
+		description: "Fetch Sentry issues and crashes, analyze root causes, and create a prioritized fix plan",
+		handler: async (args, ctx) => {
+			widgetCtx = ctx;
+			const scope = (args || "").trim();
+			const scopeHint = scope ? ` (scope: ${scope})` : "";
+
+			ctx.ui.notify(`Starting Sentry issue analysis${scopeHint}...`, "info");
+
+			// Find sentry-logs chain
+			const sentryLogsChain = chains.find(c => c.name === "sentry-logs");
+			if (!sentryLogsChain) {
+				ctx.ui.notify("sentry-logs chain not found in .pi/agents/agent-chain.yaml", "error");
+				return;
+			}
+
+			// Activate the sentry-logs chain
+			activateChain(sentryLogsChain);
+
+			// Build task string with optional scope
+			const task = scope
+				? `Get Sentry issues and crashes for this project and create a fix plan. Scope: ${scope}`
+				: "Get Sentry issues and crashes for this project and create a fix plan";
+
+			// Run the chain
+			const result = await runChain(task, ctx);
+
+			// Hide chain widget
+			widgetCtx.ui.setWidget("agent-chain", undefined);
+
+			if (!result.success) {
+				ctx.ui.notify(`Sentry issue analysis failed: ${result.output.slice(0, 200)}`, "error");
+				return;
+			}
+
+			// Write report file
+			const reportPath = join(ctx.cwd, ".pi", "sentry-report.md");
+			const reportDir = dirname(reportPath);
+			if (!existsSync(reportDir)) {
+				mkdirSync(reportDir, { recursive: true });
+			}
+			writeFileSync(reportPath, result.output, "utf-8");
+
+			ctx.ui.notify(`Sentry issue analysis complete! Report saved to ${reportPath}`, "success");
+		},
+	});
+
 	// ── System Prompt Override ───────────────────
 
 	pi.on("before_agent_start", async (_event, _ctx) => {
