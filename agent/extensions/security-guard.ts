@@ -194,11 +194,7 @@ export default function securityGuard(pi: ExtensionAPI) {
 		projectRoot = cwd || defaultRoot;
 		policy = loadPolicy(projectRoot);
 		audit = new AuditLogger(projectRoot, policy.settings.audit_log_max_bytes);
-		console.error(
-			`[security-guard] Policy loaded: ${policy.blocked_commands.length} command rules, ` +
-			`${policy.protected_paths.length} path rules, ` +
-			`${policy.prompt_injection_patterns.length} injection patterns`,
-		);
+		// Policy loaded message suppressed (was console.error)
 	}
 
 	// Initialize with defaults (will be re-initialized on session_start with real cwd)

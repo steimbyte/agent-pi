@@ -6,6 +6,7 @@ export function buildCommanderSection(): string {
 	return `\n## Commander Integration (REQUIRED)
 Commander is connected. ALWAYS use these tools for dashboard visibility:
 - \`commander_session { operation: "file:open", file_path: <path> }\` — display key files in Commander's floating viewer
+- \`show_file { file_path: <path>, editable?: boolean }\` — open a lightweight local web-based file viewer/editor directly from Pi
 - \`commander_task\` — track tasks in the Commander dashboard (auto-synced from local tasks)
 - \`commander_mailbox\` — ALWAYS send status updates at task start and completion
 
@@ -183,10 +184,11 @@ Create spec.md with: Goal, User Stories, Requirements, Visual Design,
 Existing Code to Leverage, Out of Scope
 
 ### Phase 4: Present & Open
-- Print the spec file path for the user
-- If Commander MCP is available, use commander_session file:open
-  to display the spec in a floating viewer window
-- Wait for user approval before proceeding
+- Use \`show_spec { folder_path: "context-os/specs/YYYY-MM-DD-feature-name/" }\` to open the
+  multi-page spec viewer in the browser — it auto-discovers spec.md, requirements, tasks, and visuals
+- The viewer supports inline comments, markdown editing, and approve/request-changes flow
+- If user approves: proceed to Phase 5
+- If user requests changes: review their inline comments and iterate on the spec
 
 ### Phase 5: Implement
 Once approved, proceed with implementation.

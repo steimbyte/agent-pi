@@ -545,15 +545,15 @@ export function generatePlanViewerHTML(opts: {
 <!-- View Toggle Bar -->
 <div class="toggle-bar">
   <div class="view-toggle">
-    <button id="btnRendered" onclick="setView('rendered')">Rendered</button>
-    <button class="active" id="btnRaw" onclick="setView('raw')">Markdown</button>
+    <button class="active" id="btnRendered" onclick="setView('rendered')">Rendered</button>
+    <button id="btnRaw" onclick="setView('raw')">Markdown</button>
   </div>
 </div>
 
 <!-- Content -->
-<div class="content">
-  <div id="renderedView" class="markdown-body" style="display:none;"></div>
-  <div id="rawView" class="raw-view active">
+<div class="content scrollable">
+  <div id="renderedView" class="markdown-body" style="display:block;"></div>
+  <div id="rawView" class="raw-view">
     <textarea id="rawEditor" spellcheck="false"></textarea>
   </div>
 </div>
@@ -586,7 +586,7 @@ export function generatePlanViewerHTML(opts: {
   let markdown = ${escapedMarkdown};
   let originalMarkdown = markdown;
   let modified = false;
-  let currentView = 'raw';
+  let currentView = 'rendered';
   let answers = {};  // questionId -> answer text
   let questionCount = 0;
 

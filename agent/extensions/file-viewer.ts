@@ -1,0 +1,248 @@
+// ABOUTME: Lightweight local file viewer/editor that opens in the browser without Commander.
+// ABOUTME: Serves a local web UI for viewing and optionally editing a single file directly from the CLI.
+
+import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { basename, resolve } from "node:path";
+import { execSync } from "node:child_process";
+import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
+import { outputLine } from "./lib/output-box.ts";
+import { applyExtensionDefaults } from "./lib/themeMap.ts";
+import { generateFileViewerHTML } from "./lib/file-viewer-html.ts";
+
+interface FileViewerResult {
+	action: "done";
+	modified: boolean;
+	content: string;
+}
+
+function openBrowser(url: string): void {
+	try {
+		execSync(`open "${url}"`, { stdio: "ignore" });
+	} catch {
+		try {
+			execSync(`xdg-open "${url}"`, { stdio: "ignore" });
+		} catch {
+			try {
+				execSync(`start "${url}"`, { stdio: "ignore" });
+			} catch {}
+		}
+	}
+}
+
+function parseRange(content: string, lineRange?: string): string {
+	if (!lineRange) return content;
+	const lines = content.split("\n");
+	const match = lineRange.match(/^(\d+)(?:-(\d+))?$/);
+	if (!match) return content;
+	const start = Math.max(0, parseInt(match[1], 10) - 1);
+	const end = match[2] ? Math.min(lines.length, parseInt(match[2], 10)) : start + 1;
+	const out: string[] = [];
+	if (start > 0) out.push("...");
+	out.push(...lines.slice(start, end));
+	if (end < lines.length) out.push("...");
+	return out.join("\n");
+}
+
+function startFileViewerServer(opts: {
+	filePath: string;
+	title: string;
+	editable: boolean;
+	lineRange?: string;
+}): Promise<{ port: number; server: Server; waitForResult: () => Promise<FileViewerResult> }> {
+	return new Promise((resolveSetup, rejectSetup) => {
+		let initialContent = "";
+		try {
+			initialContent = readFileSync(opts.filePath, "utf-8");
+		} catch (err) {
+			rejectSetup(err);
+			return;
+		}
+
+		let resolveResult: (result: FileViewerResult) => void;
+		const resultPromise = new Promise<FileViewerResult>((res) => {
+			resolveResult = res;
+		});
+
+		const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+			res.setHeader("Access-Control-Allow-Origin", "*");
+			res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+			res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+			if (req.method === "OPTIONS") {
+				res.writeHead(204);
+				res.end();
+				return;
+			}
+
+			const url = new URL(req.url || "/", "http://localhost");
+
+			if (req.method === "GET" && url.pathname === "/") {
+				const port = (server.address() as any)?.port || 0;
+				const html = generateFileViewerHTML({
+					title: opts.title,
+					filePath: opts.filePath,
+					content: parseRange(initialContent, opts.lineRange),
+					port,
+					lineRange: opts.lineRange,
+					editable: opts.editable,
+				});
+				res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+				res.end(html);
+				return;
+			}
+
+			if (req.method === "POST" && url.pathname === "/save") {
+				let body = "";
+				req.on("data", (chunk) => { body += chunk; });
+				req.on("end", () => {
+					try {
+						if (!opts.editable) throw new Error("This viewer is read-only");
+						const data = JSON.parse(body || "{}");
+						writeFileSync(opts.filePath, data.content || "", "utf-8");
+						initialContent = data.content || "";
+						res.writeHead(200, { "Content-Type": "application/json" });
+						res.end(JSON.stringify({ ok: true }));
+					} catch (err: any) {
+						res.writeHead(400, { "Content-Type": "application/json" });
+						res.end(JSON.stringify({ ok: false, error: err?.message || "Save failed" }));
+					}
+				});
+				return;
+			}
+
+			if (req.method === "POST" && url.pathname === "/result") {
+				let body = "";
+				req.on("data", (chunk) => { body += chunk; });
+				req.on("end", () => {
+					try {
+						const data = JSON.parse(body || "{}");
+						res.writeHead(200, { "Content-Type": "application/json" });
+						res.end(JSON.stringify({ ok: true }));
+						resolveResult!({
+							action: "done",
+							modified: !!data.modified,
+							content: typeof data.content === "string" ? data.content : initialContent,
+						});
+					} catch {
+						res.writeHead(400, { "Content-Type": "application/json" });
+						res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+					}
+				});
+				return;
+			}
+
+			res.writeHead(404);
+			res.end("Not found");
+		});
+
+		server.listen(0, "127.0.0.1", () => {
+			const addr = server.address() as any;
+			resolveSetup({ port: addr.port, server, waitForResult: () => resultPromise });
+		});
+	});
+}
+
+const ShowFileParams = Type.Object({
+	file_path: Type.String({ description: "Path to the file to open" }),
+	title: Type.Optional(Type.String({ description: "Optional title shown in the viewer header" })),
+	line_range: Type.Optional(Type.String({ description: "Optional line range like '45-60' or '45'" })),
+	editable: Type.Optional(Type.Boolean({ description: "Whether to allow editing and saving from the browser UI" })),
+});
+
+export default function (pi: ExtensionAPI) {
+	let activeServer: Server | null = null;
+
+	function cleanupServer() {
+		if (activeServer) {
+			try { activeServer.close(); } catch {}
+			activeServer = null;
+		}
+	}
+
+	async function runViewer(ctx: ExtensionContext, params: { file_path: string; title?: string; line_range?: string; editable?: boolean; }) {
+		cleanupServer();
+
+		const filePath = resolve(params.file_path);
+		const editable = params.editable === true;
+		const title = params.title || basename(filePath);
+
+		const { port, server, waitForResult } = await startFileViewerServer({
+			filePath,
+			title,
+			editable,
+			lineRange: params.line_range,
+		});
+		activeServer = server;
+		const url = `http://127.0.0.1:${port}`;
+		openBrowser(url);
+
+		if (ctx.hasUI) ctx.ui.notify(`File viewer opened at ${url}`, "info");
+
+		try {
+			return await waitForResult();
+		} finally {
+			cleanupServer();
+		}
+	}
+
+	pi.registerTool({
+		name: "show_file",
+		label: "Show File",
+		description:
+			"Open a lightweight local file viewer/editor in the browser without Commander. " +
+			"Supports read-only viewing by default, optional editing/saving, and simple line-range display.",
+		parameters: ShowFileParams,
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const p = params as { file_path: string; title?: string; line_range?: string; editable?: boolean };
+			if (!existsSync(p.file_path)) {
+				throw new Error(`File not found: ${p.file_path}`);
+			}
+
+			const result = await runViewer(ctx, p);
+			return {
+				content: [{
+					type: "text",
+					text: result.modified
+						? `File viewer closed. Changes were made${p.editable ? " and may have been saved" : ""}.`
+						: "File viewer closed.",
+				}],
+			};
+		},
+	});
+
+	pi.registerCommand("show-file", {
+		description: "Open a local file viewer/editor in the browser",
+		handler: async (args, ctx) => {
+			const filePath = String(args || "").trim();
+			if (!filePath) {
+				ctx.ui.notify("Usage: /show-file <path>", "warning");
+				return;
+			}
+
+			await runViewer(ctx, { file_path: filePath, editable: false });
+		},
+	});
+
+	applyExtensionDefaults(pi, import.meta.url, {
+		name: "file-viewer",
+		rank: 95,
+		description: "Lightweight local web-based file viewer/editor",
+		themeVariables: {
+			accent: 0x2980B9,
+			accentEmphasis: 0x3A9AD5,
+			secondary: 0x8892A0,
+			success: 0x48D889,
+			warning: 0xF0B429,
+			error: 0xE85858,
+		},
+	});
+
+	pi.registerCommand("show-file-help", {
+		description: "Show help for the local file viewer tool",
+		handler: async (_args, ctx) => {
+			outputLine(ctx, "show_file { file_path: \"path/to/file\", editable: true }", "info");
+		},
+	});
+}

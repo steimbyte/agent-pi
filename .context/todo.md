@@ -1,46 +1,15 @@
-# Completion Report Viewer
+# Verification and Implementation Plan 
 
-A summary/completion report overlay that opens in the browser (same style as the Plan Viewer). Shows work done, files changed with diffs, and the ability to rollback changes.
+## Remove commander dependcey
 
-## Architecture
-
-- **New extension file**: `agent/extensions/completion-report.ts` — registers the `show_report` tool and `/report` command
-- **New HTML generator**: `agent/extensions/lib/completion-report-html.ts` — self-contained HTML page (same pattern as `plan-viewer-html.ts`)
-- **Reuses**: HTTP server pattern, browser opener, theme system from `plan-viewer.ts`
-
-## Implementation Plan
-
-- [ ] **1. Create `completion-report-html.ts`** — The self-contained HTML template
-  - Same CSS design system as plan-viewer (dark theme, same vars, header, footer)
-  - **Summary Section**: Title, task count, duration, status badges
-  - **Files Changed Section**: Collapsible list of files with change stats (+/- lines)
-  - **Diff Viewer**: Syntax-highlighted unified diffs per file (expand/collapse each)
-  - **Rollback Section**: Per-file rollback buttons + "Rollback All" in footer
-  - Rollback sends POST to server with file paths to revert
-  - Copy report and Save to desktop buttons (reuse pattern)
-
-- [ ] **2. Create `completion-report.ts`** — The extension file
-  - `show_report` tool: accepts `title`, optional `summary` markdown, optional `base_ref` (git ref to diff against, defaults to HEAD~1 or auto-detect)
-  - Gathers git diff data: `git diff --stat`, `git diff` for full diffs, file list
-  - Gathers task completion data from `.context/todo.md` if it exists
-  - Starts HTTP server (same pattern as plan-viewer), serves HTML + handles rollback POST
-  - `/rollback` endpoint: runs `git checkout <ref> -- <file>` for selected files
-  - `/report` command: opens report for current session's changes
-  - Registers in theme map
-
-- [ ] **3. Wire up the extension**
-  - Add `completion-report` to `themeMap.ts` THEME_MAP
-  - Add tool description to system prompt in `mode-prompts.ts` if needed
-
-- [ ] **4. Test the viewer**
-  - Run the extension and verify the browser opens with the report
-  - Test diff display, file collapsing, rollback per-file and rollback-all
-  - Verify the same look and feel as the plan viewer
-
-## Key Design Decisions
-
-- **Git-based diffs**: Uses `git diff` against a base ref (auto-detects merge-base or uses stash)
-- **Rollback = git checkout**: Safe rollback via `git checkout <base_ref> -- <file>` per file
-- **No raw markdown view**: As requested — rendered-only report
-- **Self-contained HTML**: Single file, no external deps except marked.js CDN (same as plan viewer)
-- **Data flow**: Extension gathers git data → serializes into JSON → embeds in HTML → browser renders
+- [x] Inspect the current repo to identify where the Pi extension and Commander app/file-viewer implementations live.
+- [x] Compare current code paths for `commander_session file:open` and the Commander app file viewer to determine whether the old external viewer was replaced by an in-app local web overlay.
+- [x] Check git status and modified files in both likely directories to see where the recent file-viewer changes actually landed.
+- [x] Summarize the result with concrete evidence: whether the replacement exists, what is still using MCP, and whether edits appear to be in the intended repo.
+- [ ] The goal is to remove the dep on commander for the file viewer and instead copy our plan viewer/ spec viewer and use this as the base for a file viewer/editor light wight to open files from the cli directly
+  - [x] Review existing `plan-viewer` / `spec-viewer` patterns and identify the minimal reusable structure.
+  - [x] Implement a native `show_file` viewer/editor tool in `agent/extensions`.
+  - [x] Add the supporting HTML generator for the new local file viewer.
+  - [x] Update prompts/docs to reference the local file viewer where safe and appropriate.
+  - [x] Verify the new flow with focused tests or inspection.
+  - [ ] Present completion report.
