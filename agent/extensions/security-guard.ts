@@ -25,6 +25,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { Box, Text } from "@mariozechner/pi-tui";
 import { existsSync, readFileSync, writeFileSync, renameSync, appendFileSync, statSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -181,6 +182,40 @@ export default function securityGuard(pi: ExtensionAPI) {
 	let stats = freshStats();
 	let projectRoot = "";
 
+	// ── Security event inline card ───────────────────────────────────────────
+	// Dark gray card that flows with conversation (like memory-cycle cards).
+	// Rendered via sendMessage + registerMessageRenderer.
+
+	interface GuardCardDetails {
+		action: string;   // e.g. "stripped 2 injection(s)" or "action blocked"
+		detail: string;   // e.g. tool name / reason
+	}
+
+	function renderGuardCard(message: any, _options: any, theme: any) {
+		const details: GuardCardDetails = message.details || {};
+		const title = theme.fg("muted", "security-guard");
+		const action = theme.bold(theme.fg("warning", details.action || "event"));
+		const detail = theme.fg("dim", details.detail || "");
+
+		const body = `${title}  │  ${action}  │  ${detail}`;
+
+		const cardBg = (text: string) => `\x1b[48;2;50;50;50m${text}\x1b[49m`;
+		const box = new Box(2, 1, cardBg);
+		box.addChild(new Text(body, 0, 0));
+		return box;
+	}
+
+	pi.registerMessageRenderer<GuardCardDetails>("security-guard-event", renderGuardCard);
+
+	function emitGuardCard(action: string, detail: string) {
+		pi.sendMessage({
+			customType: "security-guard-event",
+			content: `security-guard | ${action} | ${detail}`,
+			display: true,
+			details: { action, detail },
+		});
+	}
+
 	// ================================================================
 	// Initialization
 	// ================================================================
@@ -326,6 +361,8 @@ export default function securityGuard(pi: ExtensionAPI) {
 		if (blockThreats.length > 0) {
 			stats.blocked += blockThreats.length;
 			const reason = formatThreatsForBlock(blockThreats, policy.settings.verbose_blocks);
+			const summary = blockThreats.map(t => t.description).join("; ");
+			emitGuardCard("action blocked", truncate(summary, 80));
 			return { block: true, reason };
 		}
 
@@ -399,9 +436,8 @@ export default function securityGuard(pi: ExtensionAPI) {
 				if (cleaned !== block.text) {
 					msgModified = true;
 					anyModified = true;
-					console.error(
-						`[security-guard] Stripped ${redactions.length} prompt injection(s) from tool result (${msg.toolName || "unknown"})`,
-					);
+					const toolLabel = msg.toolName || "unknown";
+					emitGuardCard(`stripped ${redactions.length} injection(s)`, toolLabel);
 					return { ...block, text: cleaned };
 				}
 

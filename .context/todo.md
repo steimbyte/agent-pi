@@ -1,26 +1,25 @@
-# Fix Plan/Spec Approval UI
+# Security Guard Persistent Widget
 
-**Problem:** When a plan or spec is approved, the entire page content is replaced with a grayed-out "Plan approved / You can close this tab" message. The user wants the full plan/spec to remain visible but in a read-only state with an approved header banner.
-
-**Solution:** After approval, instead of replacing `document.body.innerHTML`, transition the viewer into an "approved" state that:
-1. Shows a prominent "✓ APPROVED" banner at the top
-2. Renders the full plan/spec content below (read-only)
-3. Disables all editing, commenting, drag-and-drop, and interactive controls
-4. Removes the footer action buttons (Approve/Decline/etc.)
+Replace the transient `console.error` log line when injections are stripped with a persistent, styled widget block (similar to subagent widgets) that stays visible in the output log.
 
 ## Plan
 
-- [ ] **Plan Viewer** (`agent/extensions/lib/plan-viewer-html.ts`): Update the `sendResult` function's approved branch
-  - Add CSS for `.approved-banner` header style (green accent, prominent)
-  - Add CSS for `.approved-state` body class that disables all interactions
-  - On approval: add `approved-state` class to body, insert approved banner, hide footer, disable checkboxes/editing/drag-and-drop, hide toggle bar
-  - Keep content fully visible and scrollable (NOT grayed out)
+- [ ] **1. Add widget infrastructure to security-guard.ts**
+  - Store a reference to the UI context (`widgetCtx`) from `session_start` and `session_switch` events (same pattern as subagent-widget.ts)
+  - Track a `nextWidgetId` counter and a map of security event states
+  - Import `Box`, `Text` from `@mariozechner/pi-tui`
 
-- [ ] **Spec Viewer** (`agent/extensions/lib/spec-viewer-html.ts`): Update the `sendResult` function's approved branch
-  - Add same `.approved-banner` CSS styling
-  - Add `.approved-state` class that disables commenting, editing, step navigation
-  - On approval: add approved banner, hide footer, disable comment popups and commentable hover effects
-  - Keep all spec documents navigable (step bar still works for reading) but non-editable
-  - Hide comment sidebar and toggle bar
+- [ ] **2. Create widget rendering for security events**
+  - Render a persistent dark-gray background block (similar to subagent widget pattern)
+  - Format: `security-guard | action blocked | {reason}` with padding
+  - Use dark gray ANSI background (`\x1b[48;2;50;50;50m`) with white bold text
+  - Widget should be 2 lines: header line + detail line showing tool name and what was stripped
+  - Auto-remove after 60 seconds (like subagent widgets auto-remove after 30s)
 
-- [ ] **Test both viewers** by opening them and verifying the approval flow
+- [ ] **3. Wire up widget display for BOTH event types**
+  - **Context hook (injection stripping)**: Replace `console.error(...)` with widget creation showing: `security-guard | stripped {n} injection(s) | {toolName}`
+  - **Tool_call hook (blocked commands)**: Add widget creation alongside the existing `return { block: true, reason }` showing: `security-guard | action blocked | {reason summary}`
+
+- [ ] **4. Test by examining rendering output**
+  - Verify the widget renders correctly with proper padding and dark gray background
+  - Verify auto-removal timer works
