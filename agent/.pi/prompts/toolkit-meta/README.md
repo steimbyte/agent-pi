@@ -69,16 +69,15 @@ Commands are registered by the `toolkit-commands.ts` extension with a `toolkit-`
 
 | Command | Description |
 |---------|-------------|
-| `/toolkit-compact` | Memory-aware session compact (triggers Pi's native hooks) |
-| `/toolkit-restore` | Restore session from saved state and daily logs |
 | `/toolkit-save` | Commit, merge WIP to main, cleanup |
 | `/toolkit-stable` | Create stable checkpoint with tags |
 | `/toolkit-worktree` | Create isolated git worktree |
 | `/toolkit-setup` | Initialize project context and agent-memory indexing |
 | `/toolkit-rlm` | Recursive Language Model for large documents |
 | `/toolkit-just-bash` | Sandboxed bash execution (read-only, no network) |
-| `/toolkit-compact-min` | Minimal compact without memory persistence |
 | `/agent-memory` | Search and manage agent memories (registered without prefix) |
+
+> **Note:** Compact and restore are handled natively by Pi's `memory-cycle.ts` extension (`/cycle`, `/compact`). The toolkit versions have been omitted to avoid duplication.
 
 ---
 
@@ -91,15 +90,13 @@ Commands are registered by the `toolkit-commands.ts` extension with a `toolkit-`
 
 ---
 
-## Pi-native vs Toolkit Overlap
+## Pi-native vs Toolkit
 
 | Feature | Pi Native | Toolkit |
 |---------|-----------|---------|
-| Compaction | `/cycle` (memory-cycle.ts) | `/toolkit-compact` (references Pi's native hooks) |
-| Restore | Auto-injected after compact | `/toolkit-restore` (manual session state restore) |
+| Compaction | `/cycle`, `/compact` (memory-cycle.ts) | *Omitted — use Pi native* |
+| Restore | Auto-injected after compact | *Omitted — use Pi native* |
 | Agent dispatch | `dispatch_agent` / `subagent_create` | `/toolkit-team` (orchestrated multi-agent) |
-
-Both systems work together — toolkit commands delegate to Pi's native extensions.
 
 ---
 

@@ -98,9 +98,18 @@ fi
 info "Syncing commands..."
 mkdir -p "$COMMANDS_DST"
 
+# Commands to skip (handled natively by Pi's memory-cycle extension)
+SKIP_COMMANDS="compact.md compact-min.md restore.md"
+
 CMDS_CHANGED=0
 for f in "$COMMANDS_SRC"/*.md; do
     name=$(basename "$f")
+
+    # Skip commands that Pi handles natively
+    if echo "$SKIP_COMMANDS" | grep -qw "$name"; then
+        continue
+    fi
+
     if [[ -f "$COMMANDS_DST/$name" ]]; then
         if ! diff -q "$f" "$COMMANDS_DST/$name" >/dev/null 2>&1; then
             cp "$f" "$COMMANDS_DST/$name"
