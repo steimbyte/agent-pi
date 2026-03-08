@@ -1,9 +1,10 @@
-# Just Bash Skill
-
-ABOUTME: Skill for sandboxed bash execution using just-bash from Vercel Labs.
-ABOUTME: Enables safe script execution with read-only filesystem, no network, and in-memory writes.
-
 ---
+name: just-bash
+description: Sandboxed bash execution using just-bash from Vercel Labs. Use when you need to run shell commands safely without modifying the real filesystem, process data files, or test scripts in an isolated sandbox with read-only FS, no network, and in-memory writes.
+allowed-tools: Bash(just-bash:*)
+---
+
+# Just Bash Skill
 
 ## Overview
 
