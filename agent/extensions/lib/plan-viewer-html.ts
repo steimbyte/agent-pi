@@ -665,17 +665,29 @@ export function generatePlanViewerHTML(opts: {
     updateModifiedState();
   }
 
+  // Pre-process markdown to prevent "N." inside checkbox items from creating
+  // nested ordered lists. Escapes the period so marked treats it as plain text.
+  function preprocessCheckboxMarkdown(md) {
+    return md.replace(/^(\\s*- \\[[ xX]\\] )(\\d+)\\./gm, '$1$2\\\\.');
+  }
+
   function renderPlan() {
     const container = document.getElementById('renderedView');
+    // Pre-process to fix checkbox items with numbered prefixes (e.g. "- [ ] 1. text")
+    const preprocessed = preprocessCheckboxMarkdown(markdown);
     // Parse markdown and convert checkbox syntax to interactive elements
-    let html = marked.parse(markdown);
+    let html = marked.parse(preprocessed);
 
     // Convert checkbox list items to interactive plan items
+    // Handles both tight lists (<li><input>text</li>) and loose lists (<li><p><input>text</p></li>)
     html = html.replace(
-      /<li>\\s*<input[^>]*type="checkbox"[^>]*(checked)?[^>]*>\\s*(.*?)<\\/li>/gi,
-      function(match, checked, text) {
-        const isChecked = checked ? 'checked' : '';
-        const checkedClass = checked ? ' checked' : '';
+      /<li>\\s*(?:<p>)?\\s*<input([^>]*)>\\s*([\\s\\S]*?)\\s*(?:<\\/p>)?\\s*<\\/li>/gi,
+      function(match, attrs, text) {
+        if (!/type=(?:"|')checkbox(?:"|')/i.test(attrs)) return match;
+        // Clean up any stray whitespace/newlines in the captured text
+        text = text.replace(/^\\s+|\\s+$/g, '');
+        const isChecked = /checked/i.test(attrs) ? 'checked' : '';
+        const checkedClass = /checked/i.test(attrs) ? ' checked' : '';
         return '<li class="plan-item' + checkedClass + '" draggable="true">' +
           '<span class="drag-handle"><svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><circle cx="3" cy="2" r="1"/><circle cx="7" cy="2" r="1"/><circle cx="3" cy="5" r="1"/><circle cx="7" cy="5" r="1"/><circle cx="3" cy="8" r="1"/><circle cx="7" cy="8" r="1"/></svg></span>' +
           '<input type="checkbox" ' + isChecked + ' onchange="toggleCheckbox(this)">' +
@@ -687,8 +699,9 @@ export function generatePlanViewerHTML(opts: {
 
     // Also handle [ ] and [x] that marked might not convert
     html = html.replace(
-      /<li>\\[( |x|X)\\]\\s*(.*?)<\\/li>/gi,
+      /<li>\\s*(?:<p>)?\\s*\\[( |x|X)\\]\\s*([\\s\\S]*?)\\s*(?:<\\/p>)?\\s*<\\/li>/gi,
       function(match, check, text) {
+        text = text.replace(/^\\s+|\\s+$/g, '');
         const isChecked = check.toLowerCase() === 'x' ? 'checked' : '';
         const checkedClass = check.toLowerCase() === 'x' ? ' checked' : '';
         return '<li class="plan-item' + checkedClass + '" draggable="true">' +

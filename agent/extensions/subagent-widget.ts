@@ -811,6 +811,24 @@ export default function (pi: ExtensionAPI) {
 
 		// Pre-spawn scout subagent so it's always ready for recon tasks
 		preSpawnScout(ctx);
+
+		// ── Expose global hooks for escape-cancel integration ────────────
+		(globalThis as any).__piKillAllSubagents = (): number => {
+			let killed = 0;
+			for (const [, state] of agents) {
+				if (state.proc && state.status === "running") {
+					try { state.proc.kill("SIGTERM"); } catch {}
+					killed++;
+				}
+			}
+			return killed;
+		};
+		(globalThis as any).__piHasRunningSubagents = (): boolean => {
+			for (const [, state] of agents) {
+				if (state.status === "running") return true;
+			}
+			return false;
+		};
 	});
 
 	// ── /new resets — re-spawn scout for the new session ──────────────────────

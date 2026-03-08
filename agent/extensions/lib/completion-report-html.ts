@@ -431,6 +431,55 @@ export function generateCompletionReportHTML(opts: {
   }
   .diff-context .diff-line-content { color: var(--text-dim); }
 
+  /* ── Done Banner ──────────────────────── */
+  .done-banner {
+    background: var(--surface);
+    border: 1px solid var(--success);
+    border-left: 4px solid var(--success);
+    border-radius: 6px;
+    margin: 12px 16px 0;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .done-banner .done-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--success);
+    color: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .done-banner .done-text {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--success);
+    font-family: var(--mono);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .done-banner .done-sub {
+    font-size: 12px;
+    color: var(--text-dim);
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    margin-top: 2px;
+  }
+
+  /* When done, disable all interactive elements */
+  body.done-state .footer-wrapper { display: none; }
+  body.done-state .rollback-btn { display: none; }
+  body.done-state .files-header .toggle-all { pointer-events: auto; }
+  body.done-state .content { padding-bottom: 24px; }
+
   /* ── Footer ──────────────────────────── */
   .footer-wrapper {
     position: fixed;
@@ -695,13 +744,23 @@ export function generateCompletionReportHTML(opts: {
       '<div class="task-stat deletions"><div class="value">-' + report.totalDeletions + '</div><div class="label">Deletions</div></div>';
   }
 
+  // Pre-process markdown to prevent "N." inside checkbox items from creating
+  // nested ordered lists. Escapes the period so marked treats it as plain text.
+  function preprocessCheckboxMarkdown(md) {
+    return md.replace(/^(\\s*- \\[[ xX]\\] )(\\d+)\\./gm, '$1$2\\\\.');
+  }
+
   function renderTasks(taskMd) {
-    let html = marked.parse(taskMd);
+    // Pre-process to fix checkbox items with numbered prefixes
+    let html = marked.parse(preprocessCheckboxMarkdown(taskMd));
     // Enhance checkbox rendering
+    // Handles both tight lists (<li><input>text</li>) and loose lists (<li><p><input>text</p></li>)
     html = html.replace(
-      /<li>\\s*<input[^>]*type="checkbox"[^>]*(checked)?[^>]*>\\s*(.*?)<\\/li>/gi,
-      function(match, checked, text) {
-        if (checked) {
+      /<li>\\s*(?:<p>)?\\s*<input([^>]*)>\\s*([\\s\\S]*?)\\s*(?:<\\/p>)?\\s*<\\/li>/gi,
+      function(match, attrs, text) {
+        if (!/type=(?:"|')checkbox(?:"|')/i.test(attrs)) return match;
+        text = text.replace(/^\\s+|\\s+$/g, '');
+        if (/checked/i.test(attrs)) {
           return '<li class="task-done">✓ ' + text + '</li>';
         }
         return '<li class="task-pending">☐ ' + text + '</li>';
@@ -709,8 +768,9 @@ export function generateCompletionReportHTML(opts: {
     );
     // Handle [ ] and [x] syntax
     html = html.replace(
-      /<li>\\[( |x|X)\\]\\s*(.*?)<\\/li>/gi,
+      /<li>\\s*(?:<p>)?\\s*\\[( |x|X)\\]\\s*([\\s\\S]*?)\\s*(?:<\\/p>)?\\s*<\\/li>/gi,
       function(match, check, text) {
+        text = text.replace(/^\\s+|\\s+$/g, '');
         if (check.toLowerCase() === 'x') {
           return '<li class="task-done">✓ ' + text + '</li>';
         }
@@ -966,9 +1026,25 @@ export function generateCompletionReportHTML(opts: {
         rolledBackFiles: Array.from(rolledBackFiles),
       }),
     }).then(function() {
-      document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:var(--text-muted);font-family:var(--font);">' +
-        '<div style="text-align:center"><p style="font-size:20px;margin-bottom:8px;">Report closed</p>' +
-        '<p style="color:var(--text-dim);">You can close this tab.</p></div></div>';
+      // Show done state: banner + full read-only content (like plan/spec viewers)
+      var banner = document.createElement('div');
+      banner.className = 'done-banner';
+      banner.innerHTML = '<div class="done-icon">\u2713</div>' +
+        '<div><div class="done-text">Report Complete</div>' +
+        '<div class="done-sub">You can close this tab.</div></div>';
+      var header = document.querySelector('.header');
+      header.parentNode.insertBefore(banner, header.nextSibling);
+
+      // Switch to done state (disables interactivity via CSS)
+      document.body.classList.add('done-state');
+
+      // Update header badge
+      var badge = document.getElementById('modeBadge');
+      if (badge) {
+        badge.textContent = 'DONE';
+        badge.style.color = 'var(--success)';
+        badge.style.borderColor = 'var(--success)';
+      }
     }).catch(function() {
       showToast('Failed to close report', 'error');
     });

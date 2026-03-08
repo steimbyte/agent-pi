@@ -69,6 +69,7 @@ interface AgentState {
 	widgetId: number;           // unique ID for subagent-style widget
 	textChunks: string[];       // streaming text for widget summary
 	summary?: string;           // short summary shown in widget
+	proc?: any;                 // ChildProcess ref for escape-cancel
 }
 
 // ── Display Name Helper ──────────────────────────
@@ -544,6 +545,9 @@ export default function (pi: ExtensionAPI) {
 				cwd: ctx.cwd,
 			});
 
+			// Track for escape-cancel integration
+			state.proc = proc;
+
 			let buffer = "";
 			let stderrBuf = "";
 
@@ -600,6 +604,8 @@ export default function (pi: ExtensionAPI) {
 			proc.stderr!.on("data", (chunk: string) => { stderrBuf += chunk; });
 
 			proc.on("close", (code) => {
+				state.proc = null;
+
 				if (buffer.trim()) {
 					try {
 						const event = JSON.parse(buffer);
@@ -668,6 +674,7 @@ export default function (pi: ExtensionAPI) {
 			});
 
 			proc.on("error", (err) => {
+				state.proc = null;
 				clearInterval(state.timer);
 				state.status = "error";
 				state.lastWork = `Error: ${err.message}`;
@@ -1314,6 +1321,27 @@ ${agentCatalog}${commanderSection}`,
 
 		_ctx.ui.setStatus("agent-team", `Team: ${activeTeamName} (${agentStates.size})`);
 		updateWidget();
+
+		// ── Expose global hooks for escape-cancel integration ────────────
+		// Team agents also have running subprocesses that should be killed
+		// on double-ESC. We reuse __piKillAllSubagents-style hook naming but
+		// scoped to team procs. The escape-cancel extension checks these.
+		(globalThis as any).__piKillTeamProcs = (): number => {
+			let killed = 0;
+			for (const [, state] of agentStates) {
+				if (state.proc && state.status === "running") {
+					try { state.proc.kill("SIGTERM"); } catch {}
+					killed++;
+				}
+			}
+			return killed;
+		};
+		(globalThis as any).__piHasRunningTeam = (): boolean => {
+			for (const [, state] of agentStates) {
+				if (state.status === "running") return true;
+			}
+			return false;
+		};
 
 		// Use footer.ts for footer — do not overwrite; widget uses placement: belowEditor
 

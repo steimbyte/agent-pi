@@ -1,6 +1,6 @@
 {
   "quietStartup": true,
-  "lastChangelogVersion": "0.57.0",
+  "lastChangelogVersion": "0.57.1",
   "theme": "midnight-ocean",
   "transport": "sse",
   "defaultProvider": "anthropic",
@@ -35,7 +35,8 @@
     "extensions/tool-registry.ts",
     "extensions/tool-search.ts",
     "extensions/tool-caller.ts",
-    "extensions/lean-tools.ts"
+    "extensions/lean-tools.ts",
+    "extensions/escape-cancel.ts"
   ],
   "editorPaddingX": 2,
   "showHardwareCursor": true,

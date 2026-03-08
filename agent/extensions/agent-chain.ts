@@ -154,6 +154,9 @@ export default function (pi: ExtensionAPI) {
 	let pendingReset = false;
 	let selectedStepIndex = -1;
 
+	// Track the currently running chain subprocess for cancellation
+	let currentChainProc: any = null;
+
 	function loadChains(cwd: string) {
 		const extDir = dirname(fileURLToPath(import.meta.url));
 		const extProjectDir = resolve(extDir, "..");
@@ -329,6 +332,9 @@ export default function (pi: ExtensionAPI) {
 				cwd: ctx.cwd,
 			});
 
+			// Track for escape-cancel integration
+			currentChainProc = proc;
+
 			const timer = setInterval(() => {
 				state.elapsed = Date.now() - startTime;
 				updateWidget();
@@ -363,6 +369,8 @@ export default function (pi: ExtensionAPI) {
 			proc.stderr!.on("data", () => {});
 
 			proc.on("close", (code) => {
+				currentChainProc = null;
+
 				if (buffer.trim()) {
 					try {
 						const event = JSON.parse(buffer);
@@ -387,6 +395,7 @@ export default function (pi: ExtensionAPI) {
 			});
 
 			proc.on("error", (err) => {
+				currentChainProc = null;
 				clearInterval(timer);
 				resolve({
 					output: `Error spawning agent: ${err.message}`,
@@ -1140,6 +1149,19 @@ ${agentCatalog}
 
 		// Default to first chain — use /chain to switch
 		activateChain(chains[0]);
+
+		// ── Expose global hooks for escape-cancel integration ────────────
+		(globalThis as any).__piKillChainProc = (): boolean => {
+			if (currentChainProc) {
+				try { currentChainProc.kill("SIGTERM"); } catch {}
+				currentChainProc = null;
+				return true;
+			}
+			return false;
+		};
+		(globalThis as any).__piHasRunningChain = (): boolean => {
+			return currentChainProc !== null;
+		};
 
 		// run_chain is registered as a tool — available alongside all default tools
 

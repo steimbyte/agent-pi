@@ -57,6 +57,7 @@ interface AgentState {
 	lastWork: string;
 	output: string;
 	timer?: ReturnType<typeof setInterval>;
+	proc?: any;  // ChildProcess ref for escape-cancel
 }
 
 type PhaseStatus = "pending" | "active" | "done" | "error";
@@ -376,6 +377,9 @@ export default function (pi: ExtensionAPI) {
 				env: { ...process.env, PI_SUBAGENT: "1" },
 			});
 
+			// Track for escape-cancel integration
+			agentState.proc = proc;
+
 			let buffer = "";
 
 			proc.stdout!.setEncoding("utf-8");
@@ -405,6 +409,8 @@ export default function (pi: ExtensionAPI) {
 			proc.stderr!.on("data", () => {});
 
 			proc.on("close", (code) => {
+				agentState.proc = null;
+
 				if (buffer.trim()) {
 					try {
 						const event = JSON.parse(buffer);
@@ -432,6 +438,7 @@ export default function (pi: ExtensionAPI) {
 			});
 
 			proc.on("error", (err) => {
+				agentState.proc = null;
 				clearInterval(agentState.timer);
 				agentState.status = "error";
 				agentState.lastWork = `Error: ${err.message}`;
@@ -1178,5 +1185,27 @@ ${contextSummary}${planSection}${reviewSection}
 		(globalThis as any).__piActivePipeline = null;
 		phaseStates = [];
 		clearPipelineUI();
+
+		// ── Expose global hooks for escape-cancel integration ────────────
+		(globalThis as any).__piKillPipelineProc = (): boolean => {
+			let killed = false;
+			for (const phase of phaseStates) {
+				for (const agent of phase.agents) {
+					if (agent.proc && agent.status === "running") {
+						try { agent.proc.kill("SIGTERM"); } catch {}
+						killed = true;
+					}
+				}
+			}
+			return killed;
+		};
+		(globalThis as any).__piHasRunningPipeline = (): boolean => {
+			for (const phase of phaseStates) {
+				for (const agent of phase.agents) {
+					if (agent.status === "running") return true;
+				}
+			}
+			return false;
+		};
 	});
 }

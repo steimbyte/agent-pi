@@ -909,6 +909,8 @@ export function generateSpecViewerHTML(opts: {
     rawView.classList.remove('active');
 
     var md = docMarkdown[doc.key] || '';
+    // Pre-process: escape "N." in checkbox items to prevent nested ordered lists
+    md = md.replace(/^(\\s*- \\[[ xX]\\] )(\\d+)\\./gm, '$1$2\\\\.');
     var html = marked.parse(md);
     renderedView.innerHTML = html;
 
