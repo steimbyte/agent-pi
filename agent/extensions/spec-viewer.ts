@@ -14,6 +14,7 @@ import { applyExtensionDefaults } from "./lib/themeMap.ts";
 import { generateSpecViewerHTML, type SpecDocument } from "./lib/spec-viewer-html.ts";
 import { createSpecStandaloneExport, loadVisualAsExportAsset, saveStandaloneExport, type SpecExportDocument } from "./lib/viewer-standalone-export.ts";
 import { upsertPersistedReport } from "./lib/report-index.ts";
+import { registerActiveViewer, clearActiveViewer, notifyViewerOpen } from "./lib/viewer-session.ts";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -374,11 +375,17 @@ const ShowSpecParams = Type.Object({
 export default function (pi: ExtensionAPI) {
 	let piRef = pi;
 	let activeServer: Server | null = null;
+	let activeSession: { kind: "spec"; title: string; url: string; server: Server; onClose: () => void } | null = null;
 
 	function cleanupServer() {
-		if (activeServer) {
-			try { activeServer.close(); } catch {}
-			activeServer = null;
+		const server = activeServer;
+		activeServer = null;
+		if (server) {
+			try { server.close(); } catch {}
+		}
+		if (activeSession) {
+			clearActiveViewer(activeSession);
+			activeSession = null;
 		}
 	}
 
@@ -417,11 +424,19 @@ export default function (pi: ExtensionAPI) {
 		activeServer = server;
 
 		const url = `http://127.0.0.1:${port}`;
+		activeSession = {
+			kind: "spec",
+			title: "Spec viewer",
+			url,
+			server,
+			onClose: () => {
+				activeServer = null;
+				activeSession = null;
+			},
+		};
+		registerActiveViewer(activeSession);
 		openBrowser(url);
-
-		if (ctx.hasUI) {
-			ctx.ui.notify(`Spec viewer opened at ${url}`, "info");
-		}
+		notifyViewerOpen(ctx, activeSession);
 
 		try {
 			const result = await waitForResult();

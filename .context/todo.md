@@ -1,13 +1,11 @@
 # Implementation Plan
 
-- [x] Review current `/reports` persistence, where entries are written, and current size limits/constraints.
-- [x] Introduce a SQLite-backed report index service behind the existing report-index API so `/reports` keeps one durable store instead of a growing JSON file.
-- [x] Add retention controls: prune entries older than a configurable cutoff and cap total rows, with pruning applied on write/load.
-- [x] Update report producers/viewers (`show_plan`, `show_report`, `show_spec`, `/reports`) to read/write through the shared storage layer without changing the UI behavior.
-- [x] Verify by creating/loading sample entries, confirming `/reports` still renders, and checking old entries are pruned as expected.
-- [x] Ensure this is integreated in every report going forward.
+- [x] Add a small shared viewer session registry to track the currently open browser viewer and close it programmatically.
+- [x] Update `show_file`, `show_plan`, `show_spec`, and `show_report` to register/unregister active viewers and print a CLI-visible close hint when opened.
+- [x] Add a CLI command/tool entry point to close the active viewer from the terminal, returning a sensible result for each viewer type.
+- [x] Verify TypeScript/build health and confirm each viewer now supports browser-close and CLI-close flows without hanging.
 
-## Notes
-- Prefer SQLite over raw filesystem JSON because it gives a single source of truth, predictable querying/sorting, and cleaner future filtering/search.
-- Keep the current JSON index only as a migration source/fallback if needed; goal is minimal UI churn.
-- Retention should be date-based first, with an additional hard cap as a safety valve.
+## Verification
+
+- `bunx tsc --noEmit` from repo root and `agent/` only showed TypeScript help because this repo currently has no `tsconfig.json`.
+- Reviewed the diff to confirm all four viewers now register themselves and can be closed through the shared `close_viewer` / `/close-viewer` path.

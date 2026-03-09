@@ -15,6 +15,7 @@ import { applyExtensionDefaults } from "./lib/themeMap.ts";
 import { generatePlanViewerHTML } from "./lib/plan-viewer-html.ts";
 import { createPlanStandaloneExport, saveStandaloneExport } from "./lib/viewer-standalone-export.ts";
 import { upsertPersistedReport } from "./lib/report-index.ts";
+import { registerActiveViewer, clearActiveViewer, notifyViewerOpen } from "./lib/viewer-session.ts";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -198,11 +199,17 @@ export default function (pi: ExtensionAPI) {
 
 	// Track active servers so we can clean them up
 	let activeServer: Server | null = null;
+	let activeSession: { kind: ViewerPurpose; title: string; url: string; server: Server; onClose: () => void } | null = null;
 
 	function cleanupServer() {
-		if (activeServer) {
-			try { activeServer.close(); } catch {}
-			activeServer = null;
+		const server = activeServer;
+		activeServer = null;
+		if (server) {
+			try { server.close(); } catch {}
+		}
+		if (activeSession) {
+			clearActiveViewer(activeSession);
+			activeSession = null;
 		}
 	}
 
@@ -223,13 +230,21 @@ export default function (pi: ExtensionAPI) {
 		activeServer = server;
 
 		const url = `http://127.0.0.1:${port}`;
+		activeSession = {
+			kind: purpose,
+			title: purpose === "questions" ? "Questions viewer" : "Plan viewer",
+			url,
+			server,
+			onClose: () => {
+				activeServer = null;
+				activeSession = null;
+			},
+		};
+		registerActiveViewer(activeSession);
 
 		// Open the browser
 		openBrowser(url);
-
-		if (ctx.hasUI) {
-			ctx.ui.notify(`Plan viewer opened at ${url}`, "info");
-		}
+		notifyViewerOpen(ctx, activeSession);
 
 		// Wait for user action in the browser
 		try {

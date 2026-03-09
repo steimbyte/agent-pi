@@ -15,6 +15,7 @@ import { applyExtensionDefaults } from "./lib/themeMap.ts";
 import { generateCompletionReportHTML, type ReportData, type ChangedFile } from "./lib/completion-report-html.ts";
 import { createCompletionReportStandaloneExport, saveStandaloneExport } from "./lib/viewer-standalone-export.ts";
 import { upsertPersistedReport } from "./lib/report-index.ts";
+import { registerActiveViewer, clearActiveViewer, notifyViewerOpen } from "./lib/viewer-session.ts";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -465,11 +466,17 @@ const ShowReportParams = Type.Object({
 
 export default function (pi: ExtensionAPI) {
 	let activeServer: Server | null = null;
+	let activeSession: { kind: "report"; title: string; url: string; server: Server; onClose: () => void } | null = null;
 
 	function cleanupServer() {
-		if (activeServer) {
-			try { activeServer.close(); } catch {}
-			activeServer = null;
+		const server = activeServer;
+		activeServer = null;
+		if (server) {
+			try { server.close(); } catch {}
+		}
+		if (activeSession) {
+			clearActiveViewer(activeSession);
+			activeSession = null;
 		}
 	}
 
@@ -520,11 +527,19 @@ export default function (pi: ExtensionAPI) {
 			activeServer = server;
 
 			const url = `http://127.0.0.1:${port}`;
+			activeSession = {
+				kind: "report",
+				title,
+				url,
+				server,
+				onClose: () => {
+					activeServer = null;
+					activeSession = null;
+				},
+			};
+			registerActiveViewer(activeSession);
 			openBrowser(url);
-
-			if (ctx.hasUI) {
-				ctx.ui.notify(`Completion report opened at ${url}`, "info");
-			}
+			notifyViewerOpen(ctx, activeSession);
 
 			// Wait for user to close the report
 			try {
@@ -636,8 +651,19 @@ export default function (pi: ExtensionAPI) {
 			activeServer = server;
 
 			const url = `http://127.0.0.1:${port}`;
+			activeSession = {
+				kind: "report",
+				title: "Completion Report",
+				url,
+				server,
+				onClose: () => {
+					activeServer = null;
+					activeSession = null;
+				},
+			};
+			registerActiveViewer(activeSession);
 			openBrowser(url);
-			ctx.ui.notify(`Report opened at ${url}`, "info");
+			notifyViewerOpen(ctx, activeSession);
 
 			const result = await waitForResult();
 			cleanupServer();

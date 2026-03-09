@@ -10,6 +10,7 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import { outputLine } from "./lib/output-box.ts";
 import { applyExtensionDefaults } from "./lib/themeMap.ts";
 import { generateFileViewerHTML } from "./lib/file-viewer-html.ts";
+import { registerActiveViewer, clearActiveViewer, closeActiveViewer, getActiveViewer, notifyViewerOpen } from "./lib/viewer-session.ts";
 
 interface FileViewerResult {
 	action: "done";
@@ -153,11 +154,17 @@ const ShowFileParams = Type.Object({
 
 export default function (pi: ExtensionAPI) {
 	let activeServer: Server | null = null;
+	let activeSession: { kind: "file"; title: string; url: string; server: Server; onClose: () => void } | null = null;
 
 	function cleanupServer() {
-		if (activeServer) {
-			try { activeServer.close(); } catch {}
-			activeServer = null;
+		const server = activeServer;
+		activeServer = null;
+		if (server) {
+			try { server.close(); } catch {}
+		}
+		if (activeSession) {
+			clearActiveViewer(activeSession);
+			activeSession = null;
 		}
 	}
 
@@ -176,9 +183,19 @@ export default function (pi: ExtensionAPI) {
 		});
 		activeServer = server;
 		const url = `http://127.0.0.1:${port}`;
+		activeSession = {
+			kind: "file",
+			title: "File viewer",
+			url,
+			server,
+			onClose: () => {
+				activeServer = null;
+				activeSession = null;
+			},
+		};
+		registerActiveViewer(activeSession);
 		openBrowser(url);
-
-		if (ctx.hasUI) ctx.ui.notify(`File viewer opened at ${url}`, "info");
+		notifyViewerOpen(ctx, activeSession);
 
 		try {
 			return await waitForResult();
@@ -222,6 +239,33 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			await runViewer(ctx, { file_path: filePath, editable: false });
+		},
+	});
+
+	pi.registerTool({
+		name: "close_viewer",
+		label: "Close Viewer",
+		description: "Close the currently active local browser viewer from the CLI if one is open.",
+		parameters: Type.Object({}),
+		async execute() {
+			const closed = closeActiveViewer();
+			if (!closed.closed) {
+				return { content: [{ type: "text" as const, text: "No active local viewer is open." }] };
+			}
+			return { content: [{ type: "text" as const, text: `Closed ${closed.kind} viewer${closed.title ? `: ${closed.title}` : ""}.` }] };
+		},
+	});
+
+	pi.registerCommand("close-viewer", {
+		description: "Close the currently active local browser viewer from the CLI",
+		handler: async (_args, ctx) => {
+			const viewer = getActiveViewer();
+			if (!viewer) {
+				ctx.ui.notify("No active local viewer is open", "info");
+				return;
+			}
+			closeActiveViewer();
+			ctx.ui.notify(`Closed ${viewer.kind} viewer`, "info");
 		},
 	});
 

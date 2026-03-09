@@ -3,7 +3,21 @@
 
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+
+let DatabaseSync: any = null;
+let sqliteAvailable: boolean | null = null;
+
+function initSqlite(): boolean {
+	if (sqliteAvailable !== null) return sqliteAvailable;
+	try {
+		// node:sqlite is built-in since Node v22; dynamic require avoids crash on older runtimes
+		DatabaseSync = require("node:sqlite").DatabaseSync;
+		sqliteAvailable = true;
+	} catch {
+		sqliteAvailable = false;
+	}
+	return sqliteAvailable;
+}
 
 export type PersistedReportCategory = "plan" | "questions" | "spec" | "completion";
 
@@ -35,7 +49,7 @@ const DB_PATH = join(INDEX_DIR, "reports.db");
 const DB_RETENTION_DAYS = parsePositiveInt(process.env.PI_REPORT_RETENTION_DAYS, 30);
 const DB_MAX_ENTRIES = parsePositiveInt(process.env.PI_REPORT_MAX_ENTRIES, 500);
 
-let db: DatabaseSync | null = null;
+let db: any = null;
 let initialized = false;
 
 function parsePositiveInt(value: string | undefined, fallback: number): number {
@@ -92,7 +106,7 @@ function cutoffIso(retentionDays = DB_RETENTION_DAYS): string {
 	return cutoff.toISOString();
 }
 
-function createDatabase(): DatabaseSync {
+function createDatabase(): any {
 	ensureDir();
 	const database = new DatabaseSync(DB_PATH);
 	database.exec(`
@@ -118,7 +132,8 @@ function createDatabase(): DatabaseSync {
 	return database;
 }
 
-function getDb(): DatabaseSync {
+function getDb(): any | null {
+	if (!initSqlite()) return null;
 	if (!db) db = createDatabase();
 	if (!initialized) {
 		migrateJsonIndexIfNeeded();
@@ -251,6 +266,7 @@ function normalizeEntry(input: Partial<PersistedReportEntry> & { category: Persi
 
 function loadEntriesFromDb(): PersistedReportEntry[] {
 	const database = getDb();
+	if (!database) return legacyLoadJsonIndex().entries;
 	const rows = database.prepare(`
 		SELECT id, category, title, summary, search_text, created_at, updated_at,
 			source_path, source_label, viewer_path, viewer_label, tags_json, metadata_json
@@ -271,6 +287,13 @@ export function loadReportIndex(): PersistedReportIndex {
 
 export function saveReportIndex(index: PersistedReportIndex): void {
 	const database = getDb();
+	if (!database) {
+		const entries = (Array.isArray(index.entries) ? index.entries : []).map(
+			(e) => normalizeEntry(e as any),
+		);
+		writeLegacyJsonSnapshot(entries);
+		return;
+	}
 	const replace = database.prepare(`
 		INSERT OR REPLACE INTO reports (
 			id, category, title, summary, search_text, created_at, updated_at,
@@ -332,6 +355,7 @@ export function buildReportSearchText(entry: {
 
 export function pruneExpiredReports(retentionDays = DB_RETENTION_DAYS, maxEntries = DB_MAX_ENTRIES): number {
 	const database = getDb();
+	if (!database) return 0;
 	let pruned = 0;
 	pruned += database.prepare("DELETE FROM reports WHERE updated_at < ?").run(cutoffIso(retentionDays)).changes;
 	pruned += database.prepare(`
@@ -361,6 +385,23 @@ export function upsertPersistedReport(input: {
 	const timestamp = nowIso();
 	const sourcePath = input.sourcePath ? resolve(input.sourcePath) : undefined;
 	const viewerPath = input.viewerPath ? resolve(input.viewerPath) : undefined;
+
+	if (!database) {
+		// JSON-only fallback: load, upsert in-memory, write back
+		const legacy = legacyLoadJsonIndex();
+		const entry = normalizeEntry({
+			...input,
+			updatedAt: timestamp,
+			sourcePath,
+			viewerPath,
+		});
+		const idx = legacy.entries.findIndex((e) => e.id === entry.id);
+		if (idx >= 0) legacy.entries[idx] = entry;
+		else legacy.entries.unshift(entry);
+		writeLegacyJsonSnapshot(legacy.entries);
+		return entry;
+	}
+
 	const existing = database.prepare(`
 		SELECT id, created_at
 		FROM reports
@@ -412,4 +453,9 @@ export function resetReportStorageForTests(): void {
 	if (existsSync(DB_PATH)) {
 		try { unlinkSync(DB_PATH); } catch {}
 	}
+}
+
+/** Returns true if node:sqlite is available on this runtime. */
+export function isSqliteAvailable(): boolean {
+	return initSqlite();
 }
