@@ -644,6 +644,98 @@ export function stripInjections(
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Tool Call Budgeting (OWASP #6 — Excessive Agency)
+// ═══════════════════════════════════════════════════════════════════
+
+export interface ToolBudget {
+	max_tool_calls_per_turn: number;    // 200, 0 = unlimited
+	max_tool_calls_per_session: number; // 2000, 0 = unlimited
+	max_bash_calls_per_turn: number;    // 100, 0 = unlimited
+	warn_threshold_pct: number;         // 0.8
+}
+
+/**
+ * Check whether a tool call exceeds the configured budget.
+ * Returns a ThreatResult if budget is exceeded or near-exceeded, null otherwise.
+ */
+export function checkToolBudget(
+	toolName: string,
+	counters: { turn: number; session: number; bashTurn: number },
+	budget: ToolBudget,
+): ThreatResult | null {
+	// Bash-specific turn limit
+	if (toolName === "bash" && budget.max_bash_calls_per_turn > 0) {
+		if (counters.bashTurn >= budget.max_bash_calls_per_turn) {
+			return {
+				severity: "block",
+				category: "unknown",
+				description: `Tool budget exceeded: ${counters.bashTurn} bash calls this turn (limit: ${budget.max_bash_calls_per_turn})`,
+				matched: `bash:${counters.bashTurn}/${budget.max_bash_calls_per_turn}`,
+				rulePattern: "tool_budget.max_bash_calls_per_turn",
+			};
+		}
+		const bashWarn = Math.floor(budget.max_bash_calls_per_turn * budget.warn_threshold_pct);
+		if (counters.bashTurn >= bashWarn) {
+			return {
+				severity: "warn",
+				category: "unknown",
+				description: `Tool budget warning: ${counters.bashTurn} bash calls this turn (limit: ${budget.max_bash_calls_per_turn})`,
+				matched: `bash:${counters.bashTurn}/${budget.max_bash_calls_per_turn}`,
+				rulePattern: "tool_budget.max_bash_calls_per_turn",
+			};
+		}
+	}
+
+	// Session limit
+	if (budget.max_tool_calls_per_session > 0) {
+		if (counters.session >= budget.max_tool_calls_per_session) {
+			return {
+				severity: "block",
+				category: "unknown",
+				description: `Tool budget exceeded: ${counters.session} calls this session (limit: ${budget.max_tool_calls_per_session})`,
+				matched: `session:${counters.session}/${budget.max_tool_calls_per_session}`,
+				rulePattern: "tool_budget.max_tool_calls_per_session",
+			};
+		}
+		const sessionWarn = Math.floor(budget.max_tool_calls_per_session * budget.warn_threshold_pct);
+		if (counters.session >= sessionWarn) {
+			return {
+				severity: "warn",
+				category: "unknown",
+				description: `Tool budget warning: ${counters.session} calls this session (limit: ${budget.max_tool_calls_per_session})`,
+				matched: `session:${counters.session}/${budget.max_tool_calls_per_session}`,
+				rulePattern: "tool_budget.max_tool_calls_per_session",
+			};
+		}
+	}
+
+	// Turn limit (general)
+	if (budget.max_tool_calls_per_turn > 0) {
+		if (counters.turn >= budget.max_tool_calls_per_turn) {
+			return {
+				severity: "block",
+				category: "unknown",
+				description: `Tool budget exceeded: ${counters.turn} calls this turn (limit: ${budget.max_tool_calls_per_turn})`,
+				matched: `turn:${counters.turn}/${budget.max_tool_calls_per_turn}`,
+				rulePattern: "tool_budget.max_tool_calls_per_turn",
+			};
+		}
+		const turnWarn = Math.floor(budget.max_tool_calls_per_turn * budget.warn_threshold_pct);
+		if (counters.turn >= turnWarn) {
+			return {
+				severity: "warn",
+				category: "unknown",
+				description: `Tool budget warning: ${counters.turn} calls this turn (limit: ${budget.max_tool_calls_per_turn})`,
+				matched: `turn:${counters.turn}/${budget.max_tool_calls_per_turn}`,
+				rulePattern: "tool_budget.max_tool_calls_per_turn",
+			};
+		}
+	}
+
+	return null;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Output Size Limits (OWASP #10 — Unbounded Consumption)
 // ═══════════════════════════════════════════════════════════════════
 

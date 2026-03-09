@@ -474,3 +474,10 @@ settings:
 
   # Max chars allowed in a single tool result before truncation (0 = unlimited)
   max_tool_result_chars: 100000
+
+  # Tool call budget — limits excessive agent autonomy (OWASP #6)
+  # Set any value to 0 to disable that specific limit
+  tool_budget_max_tool_calls_per_turn: 200
+  tool_budget_max_tool_calls_per_session: 2000
+  tool_budget_max_bash_calls_per_turn: 100
+  tool_budget_warn_threshold_pct: 0.8

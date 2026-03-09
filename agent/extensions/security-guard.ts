@@ -39,9 +39,11 @@ import {
 	formatThreat,
 	formatThreatsForBlock,
 	truncateToolResult,
+	checkToolBudget,
 	type SecurityPolicy,
 	type ThreatResult,
 	type Severity,
+	type ToolBudget,
 } from "./lib/security-engine.ts";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -183,6 +185,9 @@ export default function securityGuard(pi: ExtensionAPI) {
 	let stats = freshStats();
 	let projectRoot = "";
 
+	// Tool call budget counters (OWASP #6)
+	let budgetCounters = { turn: 0, session: 0, bashTurn: 0 };
+
 	// ── Security event inline card ───────────────────────────────────────────
 	// Dark gray card that flows with conversation (like memory-cycle cards).
 	// Rendered via sendMessage + registerMessageRenderer.
@@ -246,6 +251,42 @@ export default function securityGuard(pi: ExtensionAPI) {
 		const { toolName } = event;
 		const params = event.arguments || event.params || event.input || {};
 		const allThreats: ThreatResult[] = [];
+
+		// ── Tool budget check (OWASP #6) ──────────────────────────
+		budgetCounters.turn++;
+		budgetCounters.session++;
+		if (toolName === "bash") budgetCounters.bashTurn++;
+
+		const s = policy.settings as any;
+		const toolBudgetSettings: ToolBudget | null = (s.tool_budget_max_tool_calls_per_turn != null) ? {
+			max_tool_calls_per_turn: s.tool_budget_max_tool_calls_per_turn ?? 200,
+			max_tool_calls_per_session: s.tool_budget_max_tool_calls_per_session ?? 2000,
+			max_bash_calls_per_turn: s.tool_budget_max_bash_calls_per_turn ?? 100,
+			warn_threshold_pct: s.tool_budget_warn_threshold_pct ?? 0.8,
+		} : null;
+		if (toolBudgetSettings) {
+			const budgetResult = checkToolBudget(toolName, budgetCounters, toolBudgetSettings);
+			if (budgetResult) {
+				audit.log({
+					timestamp: now(),
+					severity: budgetResult.severity,
+					category: budgetResult.category,
+					tool: toolName,
+					description: budgetResult.description,
+					matched: budgetResult.matched,
+					action: budgetResult.severity === "block" ? "blocked" : "warned",
+				});
+				if (budgetResult.severity === "block") {
+					stats.blocked++;
+					emitGuardCard("budget exceeded", budgetResult.matched);
+					return { block: true, reason: formatThreatsForBlock([budgetResult], policy.settings.verbose_blocks) };
+				}
+				stats.warned++;
+				if (ctx?.ui?.notify) {
+					ctx.ui.notify(`⚠️ ${budgetResult.description}`, "warning");
+				}
+			}
+		}
 
 		// ── Bash commands ──────────────────────────────────────────
 		if (toolName === "bash") {
@@ -513,10 +554,17 @@ export default function securityGuard(pi: ExtensionAPI) {
 	// Session Lifecycle
 	// ================================================================
 
+	// Reset per-turn budget counters on each new user input
+	pi.on("input", async (_event, _ctx) => {
+		budgetCounters.turn = 0;
+		budgetCounters.bashTurn = 0;
+	});
+
 	pi.on("session_start", async (_event, ctx) => {
 		const cwd = ctx?.cwd || defaultRoot;
 		initPolicy(cwd);
 		stats = freshStats();
+		budgetCounters = { turn: 0, session: 0, bashTurn: 0 };
 
 		if (ctx?.ui?.setStatus) {
 			ctx.ui.setStatus("security", "🛡️ Security Guard");
@@ -561,6 +609,10 @@ export default function securityGuard(pi: ExtensionAPI) {
 						`  Injection rules: ${policy.prompt_injection_patterns.length}`,
 						`  Allowlist cmds:  ${policy.allowlist.commands.length}`,
 						`  Allowlist paths: ${policy.allowlist.paths.length}`,
+						``,
+						`Tool budget (this turn / session):`,
+						`  Calls:   ${budgetCounters.turn} / ${budgetCounters.session}`,
+						`  Bash:    ${budgetCounters.bashTurn} (turn)`,
 					];
 
 					if (stats.threats.length > 0) {

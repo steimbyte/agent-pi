@@ -14,8 +14,10 @@ import {
 	formatThreat,
 	formatThreatsForBlock,
 	truncateToolResult,
+	checkToolBudget,
 	type SecurityPolicy,
 	type ThreatResult,
+	type ToolBudget,
 } from "../lib/security-engine.ts";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -771,6 +773,72 @@ describe("truncateToolResult", () => {
 		expect(result.text).toBe("");
 		expect(result.truncated).toBe(false);
 		expect(result.originalLength).toBe(0);
+	});
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// checkToolBudget Tests (OWASP #6 — Excessive Agency)
+// ═══════════════════════════════════════════════════════════════════
+
+describe("checkToolBudget", () => {
+	const budget: ToolBudget = {
+		max_tool_calls_per_turn: 200,
+		max_tool_calls_per_session: 2000,
+		max_bash_calls_per_turn: 100,
+		warn_threshold_pct: 0.8,
+	};
+
+	it("should return null when under budget", () => {
+		const result = checkToolBudget("bash", { turn: 10, session: 50, bashTurn: 5 }, budget);
+		expect(result).toBeNull();
+	});
+
+	it("should warn at 80% of turn budget", () => {
+		const result = checkToolBudget("read", { turn: 160, session: 50, bashTurn: 0 }, budget);
+		expect(result).not.toBeNull();
+		expect(result!.severity).toBe("warn");
+	});
+
+	it("should block at 100% of turn budget", () => {
+		const result = checkToolBudget("read", { turn: 200, session: 50, bashTurn: 0 }, budget);
+		expect(result).not.toBeNull();
+		expect(result!.severity).toBe("block");
+	});
+
+	it("should warn at 80% of session budget", () => {
+		const result = checkToolBudget("read", { turn: 10, session: 1600, bashTurn: 0 }, budget);
+		expect(result).not.toBeNull();
+		expect(result!.severity).toBe("warn");
+	});
+
+	it("should block at 100% of session budget", () => {
+		const result = checkToolBudget("read", { turn: 10, session: 2000, bashTurn: 0 }, budget);
+		expect(result).not.toBeNull();
+		expect(result!.severity).toBe("block");
+	});
+
+	it("should track bash calls separately", () => {
+		const result = checkToolBudget("bash", { turn: 10, session: 50, bashTurn: 100 }, budget);
+		expect(result).not.toBeNull();
+		expect(result!.severity).toBe("block");
+		expect(result!.description).toContain("bash");
+	});
+
+	it("should warn at 80% of bash turn budget", () => {
+		const result = checkToolBudget("bash", { turn: 10, session: 50, bashTurn: 80 }, budget);
+		expect(result).not.toBeNull();
+		expect(result!.severity).toBe("warn");
+	});
+
+	it("should treat 0 as unlimited", () => {
+		const unlimitedBudget: ToolBudget = {
+			max_tool_calls_per_turn: 0,
+			max_tool_calls_per_session: 0,
+			max_bash_calls_per_turn: 0,
+			warn_threshold_pct: 0.8,
+		};
+		const result = checkToolBudget("bash", { turn: 99999, session: 99999, bashTurn: 99999 }, unlimitedBudget);
+		expect(result).toBeNull();
 	});
 });
 
