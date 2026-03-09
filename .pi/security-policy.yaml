@@ -475,6 +475,9 @@ settings:
   # Max chars allowed in a single tool result before truncation (0 = unlimited)
   max_tool_result_chars: 100000
 
+  # Redact secrets/credentials from assistant output (OWASP #2)
+  redact_secrets: true
+
   # Tool call budget — limits excessive agent autonomy (OWASP #6)
   # Set any value to 0 to disable that specific limit
   tool_budget_max_tool_calls_per_turn: 200

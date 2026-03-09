@@ -15,6 +15,7 @@ import {
 	formatThreatsForBlock,
 	truncateToolResult,
 	checkToolBudget,
+	scanForSecrets,
 	type SecurityPolicy,
 	type ThreatResult,
 	type ToolBudget,
@@ -839,6 +840,77 @@ describe("checkToolBudget", () => {
 		};
 		const result = checkToolBudget("bash", { turn: 99999, session: 99999, bashTurn: 99999 }, unlimitedBudget);
 		expect(result).toBeNull();
+	});
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// scanForSecrets Tests (OWASP #2 — Sensitive Information Disclosure)
+// ═══════════════════════════════════════════════════════════════════
+
+describe("scanForSecrets", () => {
+	it("should detect OpenAI API keys", () => {
+		const result = scanForSecrets("My key is sk-abcdefghijklmnopqrstuvwxyz1234567890");
+		expect(result.found).toBe(true);
+		expect(result.redacted).toContain("[REDACTED:");
+		expect(result.redacted).not.toContain("sk-abcdefghijklmnopqrstuvwxyz");
+	});
+
+	it("should detect Anthropic API keys", () => {
+		const result = scanForSecrets("Key: sk-ant-abcdefghijklmnopqrstuvwxyz1234567890");
+		expect(result.found).toBe(true);
+		expect(result.redacted).not.toContain("sk-ant-abcdefghijklmnopqrstuvwxyz");
+	});
+
+	it("should detect GitHub tokens", () => {
+		const result = scanForSecrets("Token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij");
+		expect(result.found).toBe(true);
+		expect(result.redacted).not.toContain("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+	});
+
+	it("should detect AWS access keys", () => {
+		const result = scanForSecrets("AWS_KEY=AKIAIOSFODNN7EXAMPLE");
+		expect(result.found).toBe(true);
+		expect(result.redacted).not.toContain("AKIAIOSFODNN7EXAMPLE");
+	});
+
+	it("should detect private keys", () => {
+		const result = scanForSecrets("-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIB...");
+		expect(result.found).toBe(true);
+		expect(result.redacted).toContain("[REDACTED:");
+	});
+
+	it("should detect generic password assignments", () => {
+		const result = scanForSecrets('password = "supersecret123"');
+		expect(result.found).toBe(true);
+		expect(result.redacted).not.toContain("supersecret123");
+	});
+
+	it("should detect generic token assignments", () => {
+		const result = scanForSecrets('api_key = "tok_1234abcd5678efgh"');
+		expect(result.found).toBe(true);
+		expect(result.redacted).not.toContain("tok_1234abcd5678efgh");
+	});
+
+	it("should return clean text when no secrets found", () => {
+		const text = "This is normal code with no secrets at all.";
+		const result = scanForSecrets(text);
+		expect(result.found).toBe(false);
+		expect(result.redacted).toBe(text);
+		expect(result.matchCount).toBe(0);
+	});
+
+	it("should replace ALL occurrences not just first", () => {
+		const text = "Key1: sk-abcdefghijklmnopqrstuvwxyz12345 and Key2: sk-zyxwvutsrqponmlkjihgfedcba12345";
+		const result = scanForSecrets(text);
+		expect(result.found).toBe(true);
+		expect(result.matchCount).toBeGreaterThanOrEqual(2);
+		expect(result.redacted).not.toContain("sk-abcdefghijklmnopqrstuvwxyz");
+		expect(result.redacted).not.toContain("sk-zyxwvutsrqponmlkjihgfedcba");
+	});
+
+	it("should detect OPENSSH private keys", () => {
+		const result = scanForSecrets("-----BEGIN OPENSSH PRIVATE KEY-----");
+		expect(result.found).toBe(true);
 	});
 });
 

@@ -644,6 +644,49 @@ export function stripInjections(
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Secret/PII Scanning (OWASP #2 — Sensitive Information Disclosure)
+// ═══════════════════════════════════════════════════════════════════
+
+/** Default patterns for detecting secrets/credentials in output */
+const SECRET_PATTERNS: { name: string; pattern: RegExp }[] = [
+	{ name: "Anthropic API key", pattern: /sk-ant-[a-zA-Z0-9]{20,}/g },
+	{ name: "OpenAI API key", pattern: /sk-[a-zA-Z0-9]{20,}/g },
+	{ name: "GitHub token", pattern: /ghp_[a-zA-Z0-9]{36}/g },
+	{ name: "AWS Access Key", pattern: /AKIA[0-9A-Z]{16}/g },
+	{ name: "Private key", pattern: /-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----/g },
+	{ name: "Secret assignment", pattern: /(password|secret|token|api_key)\s*=\s*"[^"]{4,}"/gi },
+];
+
+/**
+ * Scan text for secrets/credentials and return a redacted version.
+ * Returns { found, redacted, matchCount }.
+ */
+export function scanForSecrets(
+	text: string,
+	extraPatterns?: { name: string; pattern: RegExp }[],
+): { found: boolean; redacted: string; matchCount: number } {
+	const patterns = extraPatterns ? [...SECRET_PATTERNS, ...extraPatterns] : SECRET_PATTERNS;
+	let redacted = text;
+	let matchCount = 0;
+
+	for (const { name, pattern } of patterns) {
+		// Reset lastIndex for global regexes
+		const re = new RegExp(pattern.source, pattern.flags);
+		const matches = redacted.match(re);
+		if (matches) {
+			matchCount += matches.length;
+			redacted = redacted.replace(re, `[REDACTED: ${name}]`);
+		}
+	}
+
+	return {
+		found: matchCount > 0,
+		redacted,
+		matchCount,
+	};
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Tool Call Budgeting (OWASP #6 — Excessive Agency)
 // ═══════════════════════════════════════════════════════════════════
 

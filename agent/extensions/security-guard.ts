@@ -40,6 +40,7 @@ import {
 	formatThreatsForBlock,
 	truncateToolResult,
 	checkToolBudget,
+	scanForSecrets,
 	type SecurityPolicy,
 	type ThreatResult,
 	type Severity,
@@ -524,6 +525,61 @@ export default function securityGuard(pi: ExtensionAPI) {
 			}
 			return msg;
 		});
+
+		// ── Secret/PII scanning on assistant messages (OWASP #2) ────
+		const redactSecrets = (policy.settings as any).redact_secrets ?? true;
+		if (redactSecrets) {
+			for (let i = 0; i < repairedMessages.length; i++) {
+				const msg = repairedMessages[i];
+				if (msg.role !== "assistant") continue;
+
+				const content = msg.content;
+				if (typeof content === "string") {
+					const result = scanForSecrets(content);
+					if (result.found) {
+						anyModified = true;
+						repairedMessages[i] = { ...msg, content: result.redacted };
+						stats.redacted += result.matchCount;
+						emitGuardCard(`redacted ${result.matchCount} secret(s)`, "assistant output");
+						audit.log({
+							timestamp: now(),
+							severity: "warn",
+							category: "credentials",
+							tool: "assistant",
+							description: `Redacted ${result.matchCount} secret(s) from assistant response`,
+							matched: `${result.matchCount} patterns`,
+							action: "redacted",
+						});
+					}
+				} else if (Array.isArray(content)) {
+					let msgModified = false;
+					const newContent = content.map((block: any) => {
+						if (block.type !== "text" || !block.text) return block;
+						const result = scanForSecrets(block.text);
+						if (result.found) {
+							msgModified = true;
+							anyModified = true;
+							stats.redacted += result.matchCount;
+							return { ...block, text: result.redacted };
+						}
+						return block;
+					});
+					if (msgModified) {
+						repairedMessages[i] = { ...msg, content: newContent };
+						emitGuardCard("redacted secret(s)", "assistant output");
+						audit.log({
+							timestamp: now(),
+							severity: "warn",
+							category: "credentials",
+							tool: "assistant",
+							description: "Redacted secrets from assistant response",
+							matched: "secret patterns",
+							action: "redacted",
+						});
+					}
+				}
+			}
+		}
 
 		if (anyModified) {
 			return { messages: repairedMessages };
