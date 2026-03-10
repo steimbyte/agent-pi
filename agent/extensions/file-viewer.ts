@@ -50,23 +50,27 @@ function detectLanguage(filePath: string): string {
 	const name = basename(filePath).toLowerCase();
 	if (name === "dockerfile") return "dockerfile";
 	if (name === "makefile" || name === "gnumakefile") return "makefile";
+	if (name === ".gitignore" || name === ".gitconfig") return "ini";
+	if (name === "cargo.toml") return "toml";
+	if (name === ".env" || name.startsWith(".env.")) return "ini";
 	const ext = extname(filePath).replace(/^\./, "").toLowerCase();
 	const map: Record<string, string> = {
 		js: "javascript", jsx: "javascript", mjs: "javascript", cjs: "javascript",
 		ts: "typescript", tsx: "typescript", mts: "typescript", cts: "typescript",
 		py: "python", rb: "ruby", rs: "rust", go: "go",
-		java: "java", kt: "kotlin", swift: "swift",
+		java: "java", kt: "kotlin", kts: "kotlin", swift: "swift",
 		c: "c", h: "c", cpp: "cpp", cc: "cpp", cs: "csharp",
 		html: "html", htm: "html", css: "css", scss: "scss",
 		json: "json", jsonc: "json",
 		md: "markdown", mdx: "markdown",
 		yaml: "yaml", yml: "yaml",
-		xml: "xml", svg: "xml",
+		xml: "xml", svg: "xml", plist: "xml",
 		sql: "sql",
-		sh: "bash", bash: "bash", zsh: "bash",
-		toml: "toml", ini: "ini",
+		sh: "bash", bash: "bash", zsh: "bash", fish: "bash",
+		toml: "toml", ini: "ini", conf: "ini", cfg: "ini", properties: "ini",
 		php: "php", lua: "lua", r: "r",
 		graphql: "graphql", gql: "graphql",
+		proto: "protobuf",
 		tf: "hcl", hcl: "hcl",
 	};
 	return map[ext] || "";

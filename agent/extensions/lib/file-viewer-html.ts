@@ -370,6 +370,10 @@ export function generateFileViewerHTML(opts: {
 <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/kotlin.min.js"><\/script>
 <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/rust.min.js"><\/script>
 <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/go.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/ini.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/toml.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/makefile.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/xml.min.js"><\/script>
 <script>
   var PORT = ${opts.port};
   var TITLE = ${escapedTitle};
@@ -427,14 +431,14 @@ export function generateFileViewerHTML(opts: {
     sql: 'sql',
     sh: 'bash', bash: 'bash', zsh: 'bash', fish: 'bash',
     dockerfile: 'dockerfile',
-    toml: 'toml', ini: 'ini', conf: 'ini',
+    toml: 'toml', ini: 'ini', conf: 'ini', cfg: 'ini', properties: 'ini',
     makefile: 'makefile',
     r: 'r', R: 'r',
     php: 'php', lua: 'lua', perl: 'perl', pl: 'perl',
     graphql: 'graphql', gql: 'graphql',
     proto: 'protobuf',
     tf: 'hcl', hcl: 'hcl',
-    env: 'bash', gitignore: 'bash'
+    env: 'ini', gitignore: 'ini', gitconfig: 'ini'
   };
 
   function detectLanguage() {
@@ -444,6 +448,9 @@ export function generateFileViewerHTML(opts: {
     var lower = filename.toLowerCase();
     if (lower === 'dockerfile') return 'dockerfile';
     if (lower === 'makefile' || lower === 'gnumakefile') return 'makefile';
+    if (lower === '.gitignore' || lower === '.gitconfig') return 'ini';
+    if (lower === 'cargo.toml') return 'toml';
+    if (lower === '.env' || lower.indexOf('.env.') === 0) return 'ini';
     var dotIdx = filename.lastIndexOf('.');
     if (dotIdx === -1) return '';
     var ext = filename.substring(dotIdx + 1).toLowerCase();
@@ -466,27 +473,30 @@ export function generateFileViewerHTML(opts: {
 
   var NL = String.fromCharCode(10);
 
-  function generateLineNums(content, container) {
+  function getLineCount(content) {
     var lines = content.split(NL);
     var count = lines.length;
-    if (lines.length > 1 && lines[lines.length - 1] === '') count--;
+    if (count > 1 && lines[count - 1] === '') count--;
+    return Math.max(1, count);
+  }
+
+  function renderLineNumberHtml(count) {
     var html = '';
     for (var i = 1; i <= count; i++) {
       html += '<span>' + i + '</span>';
     }
-    container.innerHTML = html;
+    return html;
+  }
+
+  function generateLineNums(content, container) {
+    var html = renderLineNumberHtml(getLineCount(content));
+    if (container.innerHTML !== html) container.innerHTML = html;
   }
 
   /* ── Highlight code ── */
   function updateGutter(content) {
-    var lines = content.split(NL);
-    var count = lines.length;
-    if (count > 1 && lines[count - 1] === '') count--;
-    var html = '';
-    for (var i = 1; i <= count; i++) {
-      html += '<span>' + i + '</span>';
-    }
-    gutter.innerHTML = html;
+    var html = renderLineNumberHtml(getLineCount(content));
+    if (gutter.innerHTML !== html) gutter.innerHTML = html;
   }
 
   var lastHighlightedContent = null;
@@ -521,8 +531,7 @@ export function generateFileViewerHTML(opts: {
   /* ── Refresh meta bar ── */
   function refreshMeta() {
     metaPath.textContent = 'Path: ' + FILE_PATH;
-    var lineCount = currentContent.split(NL).length;
-    if (currentContent.endsWith(NL) && lineCount > 1) lineCount--;
+    var lineCount = getLineCount(currentContent);
     metaLines.textContent = 'Lines: ' + lineCount + (LINE_RANGE ? ' (range ' + LINE_RANGE + ')' : '');
     metaMode.textContent = isDone ? 'Mode: Read-only (done)' : ('Mode: ' + (mode === 'view' ? 'Read' : 'Edit') + (EDITABLE ? '' : ' (read-only)'));
     metaSize.textContent = 'Size: ' + formatBytes(new Blob([currentContent]).size);
@@ -614,12 +623,32 @@ export function generateFileViewerHTML(opts: {
 
   /* ── Tab key support in editor ── */
   editor.addEventListener('keydown', function(e) {
-    if (e.key === 'Tab') {
+    if (e.key === 'Tab' && !e.shiftKey) {
       e.preventDefault();
       var start = editor.selectionStart;
       var end = editor.selectionEnd;
       editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
       editor.selectionStart = editor.selectionEnd = start + 2;
+      editor.dispatchEvent(new Event('input'));
+      return;
+    }
+    if (e.key === 'Tab' && e.shiftKey) {
+      e.preventDefault();
+      var start = editor.selectionStart;
+      var end = editor.selectionEnd;
+      var selected = editor.value.substring(start, end);
+      if (!selected) {
+        if (editor.value.substring(Math.max(0, start - 2), start) === '  ') {
+          editor.value = editor.value.substring(0, start - 2) + editor.value.substring(start);
+          editor.selectionStart = editor.selectionEnd = start - 2;
+          editor.dispatchEvent(new Event('input'));
+        }
+        return;
+      }
+      var dedented = selected.replace(/^  /gm, '');
+      editor.value = editor.value.substring(0, start) + dedented + editor.value.substring(end);
+      editor.selectionStart = start;
+      editor.selectionEnd = start + dedented.length;
       editor.dispatchEvent(new Event('input'));
     }
   });
@@ -654,6 +683,10 @@ export function generateFileViewerHTML(opts: {
     if (mode === 'edit') {
       currentContent = editor.value;
       modified = currentContent !== savedContent;
+    }
+    if (modified) {
+      var proceed = window.confirm('You have unsaved changes. Close the viewer and return to CLI anyway?');
+      if (!proceed) return;
     }
 
     /* Switch to done/read-only state immediately */
