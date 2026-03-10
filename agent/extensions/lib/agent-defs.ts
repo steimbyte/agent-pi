@@ -38,27 +38,33 @@ const HARDCODED_DEFAULT: AgentModelEntry = {
  * Searches cwd first, then extProjectDir.
  * Returns the parsed config, or a minimal default if not found.
  */
-export function loadAgentModelsConfig(cwd: string, extProjectDir?: string): AgentModelsConfig {
-	const paths = [
-		join(cwd, ".pi", "agents", "models.json"),
-		...(extProjectDir ? [join(extProjectDir, ".pi", "agents", "models.json")] : []),
-	];
-
+function loadModelsConfigFromPaths(paths: string[]): AgentModelsConfig {
 	for (const p of paths) {
 		if (existsSync(p)) {
 			try {
 				const raw = readFileSync(p, "utf-8");
 				const parsed = JSON.parse(raw);
-				// Validate minimal structure
 				if (parsed && typeof parsed === "object" && parsed.default && parsed.agents) {
 					return parsed as AgentModelsConfig;
 				}
 			} catch {}
 		}
 	}
-
-	// Fallback: no config file found
 	return { default: HARDCODED_DEFAULT, agents: {} };
+}
+
+export function loadAgentModelsConfig(cwd: string, extProjectDir?: string): AgentModelsConfig {
+	return loadModelsConfigFromPaths([
+		join(cwd, ".pi", "agents", "models.json"),
+		...(extProjectDir ? [join(extProjectDir, ".pi", "agents", "models.json")] : []),
+	]);
+}
+
+export function loadToolkitModelsConfig(cwd: string, extProjectDir?: string): AgentModelsConfig {
+	return loadModelsConfigFromPaths([
+		join(cwd, ".pi", "agents", "toolkit-models.json"),
+		...(extProjectDir ? [join(extProjectDir, ".pi", "agents", "toolkit-models.json")] : []),
+	]);
 }
 
 /**
@@ -142,18 +148,10 @@ export function parseAgentFile(filePath: string, modelsConfig?: AgentModelsConfi
  * Searches: agents/, .claude/agents/, .pi/agents/ in cwd and optionally extProjectDir.
  * Recurses into subdirectories.
  */
-export function scanAgentDefs(
-	cwd: string,
-	extProjectDir?: string,
+function scanAgentDirsInternal(
+	dirs: string[],
 	modelsConfig?: AgentModelsConfig,
 ): Map<string, AgentDef> {
-	const dirs = [
-		join(cwd, "agents"),
-		join(cwd, ".claude", "agents"),
-		join(cwd, ".pi", "agents"),
-		...(extProjectDir ? [join(extProjectDir, ".pi", "agents")] : []),
-	];
-
 	const agents = new Map<string, AgentDef>();
 
 	for (const dir of dirs) {
@@ -177,6 +175,30 @@ export function scanAgentDefs(
 	}
 
 	return agents;
+}
+
+export function scanAgentDefs(
+	cwd: string,
+	extProjectDir?: string,
+	modelsConfig?: AgentModelsConfig,
+): Map<string, AgentDef> {
+	return scanAgentDirsInternal([
+		join(cwd, "agents"),
+		join(cwd, ".claude", "agents"),
+		join(cwd, ".pi", "agents"),
+		...(extProjectDir ? [join(extProjectDir, ".pi", "agents")] : []),
+	], modelsConfig);
+}
+
+export function scanToolkitAgentDefs(
+	cwd: string,
+	extProjectDir?: string,
+	modelsConfig?: AgentModelsConfig,
+): Map<string, AgentDef> {
+	return scanAgentDirsInternal([
+		join(cwd, ".pi", "agents", "toolkit"),
+		...(extProjectDir ? [join(extProjectDir, ".pi", "agents", "toolkit")] : []),
+	], modelsConfig);
 }
 
 /**

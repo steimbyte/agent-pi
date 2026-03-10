@@ -33,8 +33,8 @@ import { applyExtensionDefaults } from "./lib/themeMap.ts";
 
 import { statusButton } from "./lib/pipeline-render.ts";
 import { DEFAULT_SUBAGENT_MODEL } from "./lib/defaults.ts";
-import { loadAgentModelsConfig, resolveAgentModelString, type AgentModelsConfig } from "./lib/agent-defs.ts";
-import { resolveToolkitWorkerModel } from "./lib/toolkit-cli.ts";
+import { loadAgentModelsConfig, loadToolkitModelsConfig, resolveAgentModelString, scanToolkitAgentDefs, type AgentModelsConfig } from "./lib/agent-defs.ts";
+import { resolveToolkitWorkerModel, isToolkitCliAgent, spawnToolkitWorker } from "./lib/toolkit-cli.ts";
 import { padRight, wordWrap, sideBySide } from "./lib/ui-helpers.ts";
 import { contextBudgetLevel, isContextLossError } from "./lib/context-budget.ts";
 import { buildCommanderPrompt } from "./lib/commander-prompt.ts";
@@ -70,6 +70,7 @@ interface AgentState {
 	widgetId: number;           // unique ID for subagent-style widget
 	textChunks: string[];       // streaming text for widget summary
 	summary?: string;           // short summary shown in widget
+	summaryLines?: string[];    // up to 2 recent CLI/output lines for richer widget preview
 	proc?: any;                 // ChildProcess ref for escape-cancel
 }
 
@@ -226,9 +227,16 @@ export default function (pi: ExtensionAPI) {
 			mkdirSync(sessionDir, { recursive: true });
 		}
 
-		// Load model config from .pi/agents/models.json, then scan agent .md files
+		// Load standard + toolkit model config, then scan agent .md files
 		const modelsConfig = loadAgentModelsConfig(cwd, extProjectDir);
-		allAgentDefs = scanAgentDirs(cwd, extProjectDir, modelsConfig);
+		const toolkitModelsConfig = loadToolkitModelsConfig(cwd, extProjectDir);
+		const standardAgentDefs = scanAgentDirs(cwd, extProjectDir, modelsConfig);
+		const toolkitAgentDefs = Array.from(scanToolkitAgentDefs(cwd, extProjectDir, toolkitModelsConfig).values());
+		const merged = new Map<string, AgentDef>();
+		for (const def of [...standardAgentDefs, ...toolkitAgentDefs]) {
+			if (!merged.has(def.name.toLowerCase())) merged.set(def.name.toLowerCase(), def);
+		}
+		allAgentDefs = Array.from(merged.values());
 
 		// Load teams from .pi/agents/teams.yaml (fallback to extension project dir)
 		let teamsPath = join(cwd, ".pi", "agents", "teams.yaml");
@@ -277,6 +285,7 @@ export default function (pi: ExtensionAPI) {
 				widgetId: nextWidgetId++,
 				textChunks: [],
 				summary: undefined,
+				summaryLines: undefined,
 			});
 		}
 
@@ -317,6 +326,7 @@ export default function (pi: ExtensionAPI) {
 						elapsed: state.elapsed,
 						turnCount: state.runCount,
 						summary: state.summary,
+						summaryLines: state.summaryLines,
 						model: state.resolvedModel || state.def.model || undefined,
 					};
 					const result = renderSubagentWidget(renderState, width, theme);
@@ -435,6 +445,7 @@ export default function (pi: ExtensionAPI) {
 		state.lastWork = "";
 		state.textChunks = [];
 		state.summary = undefined;
+		state.summaryLines = undefined;
 		state.runCount++;
 		registerAgentWidget(state);
 		updateWidget();
@@ -540,88 +551,12 @@ export default function (pi: ExtensionAPI) {
 				commanderSync((client) => preClaimTask(client, taskId, canonicalName));
 			}
 
-			const proc = spawn("pi", args, {
-				stdio: ["ignore", "pipe", "pipe"],
-				env: spawnEnv,
-				cwd: ctx.cwd,
-			});
-
-			// Track for escape-cancel integration
-			state.proc = proc;
-
-			let buffer = "";
-			let stderrBuf = "";
-
-			proc.stdout!.setEncoding("utf-8");
-			proc.stdout!.on("data", (chunk: string) => {
-				buffer += chunk;
-				const lines = buffer.split("\n");
-				buffer = lines.pop() || "";
-				for (const line of lines) {
-					if (!line.trim()) continue;
-					try {
-						const event = JSON.parse(line);
-						if (event.type === "message_update") {
-							const delta = event.assistantMessageEvent;
-							if (delta?.type === "text_delta") {
-								textChunks.push(delta.delta || "");
-								state.textChunks.push(delta.delta || "");
-								const full = textChunks.join("");
-								const last = full.split("\n").filter((l: string) => l.trim()).pop() || "";
-								state.lastWork = last;
-								state.summary = last;
-								invalidateAgentWidget(state);
-							}
-						} else if (event.type === "tool_execution_start") {
-							state.toolCount++;
-							invalidateAgentWidget(state);
-						} else if (event.type === "message_end") {
-							const msg = event.message;
-							if (msg?.usage && contextWindow > 0) {
-								state.contextPct = ((msg.usage.input || 0) / contextWindow) * 100;
-								const level = contextBudgetLevel(state.contextPct);
-								if (level === "warn" && !state._warnSent) {
-									state._warnSent = true;
-									ctx.ui.notify(`${displayName(state.def.name)} Context: ${Math.round(state.contextPct)}%`, "info");
-								} else if (level === "critical" && !state._criticalWarned) {
-									state._criticalWarned = true;
-									ctx.ui.notify(`${displayName(state.def.name)} Context: ${Math.round(state.contextPct)}% — Agent will Cycle-Memory soon`, "info");
-								}
-								invalidateAgentWidget(state);
-							}
-						} else if (event.type === "agent_end") {
-							const msgs = event.messages || [];
-							const last = [...msgs].reverse().find((m: any) => m.role === "assistant");
-							if (last?.usage && contextWindow > 0) {
-								state.contextPct = ((last.usage.input || 0) / contextWindow) * 100;
-								invalidateAgentWidget(state);
-							}
-						}
-					} catch {}
-				}
-			});
-
-			proc.stderr!.setEncoding("utf-8");
-			proc.stderr!.on("data", (chunk: string) => { stderrBuf += chunk; });
-
-			proc.on("close", (code) => {
+			const finish = (code: number | null, stderrBuf: string) => {
 				state.proc = null;
-
-				if (buffer.trim()) {
-					try {
-						const event = JSON.parse(buffer);
-						if (event.type === "message_update") {
-							const delta = event.assistantMessageEvent;
-							if (delta?.type === "text_delta") textChunks.push(delta.delta || "");
-						}
-					} catch {}
-				}
-
 				clearInterval(state.timer);
 				state.elapsed = Date.now() - startTime;
 				state.status = code === 0 ? "done" : "error";
 
-				// Mark session file as available for resume
 				if (code === 0) {
 					state.sessionFile = agentSessionFile;
 				}
@@ -629,28 +564,21 @@ export default function (pi: ExtensionAPI) {
 				let full = textChunks.join("");
 				if ((code !== 0 && code !== null) && stderrBuf.trim()) {
 					if (isContextLossError(stderrBuf)) {
-						full = "Context overflow: agent session broke tool_use/tool_result pairing. " +
-							"Clear session and re-dispatch.";
+						full = "Context overflow: agent session broke tool_use/tool_result pairing. Clear session and re-dispatch.";
 						state.sessionFile = null;
 					} else {
-						full = full.trim()
-							? `${full}\n\n--- stderr ---\n${stderrBuf.trim()}`
-							: stderrBuf.trim();
+						full = full.trim() ? `${full}\n\n--- stderr ---\n${stderrBuf.trim()}` : stderrBuf.trim();
 					}
 				}
 				state.lastWork = full.split("\n").filter((l: string) => l.trim()).pop() || "";
 				state.summary = state.lastWork;
+				state.summaryLines = full.split("\n").map((l: string) => l.trim()).filter(Boolean).slice(-3);
 				invalidateAgentWidget(state);
 
-				// Auto-remove widget ~30s after done
-				const widgetId = state.widgetId;
 				setTimeout(() => {
-					if (state.status !== "running") {
-						removeAgentWidget(state);
-					}
+					if (state.status !== "running") removeAgentWidget(state);
 				}, 30_000);
 
-				// Post-dispatch: reconcile Commander task to terminal state
 				if (commanderAvailable && taskId !== undefined) {
 					const summary = textChunks.join("").trim().split("\n").pop() || canonicalName;
 					if (state.status === "done") {
@@ -666,37 +594,91 @@ export default function (pi: ExtensionAPI) {
 					state.status === "done" ? "success" : "error"
 				);
 
-				resolve({
-					output: full,
-					exitCode: code ?? 1,
-					elapsed: state.elapsed,
-					model,
-				});
-			});
+				resolve({ output: full, exitCode: code ?? 1, elapsed: state.elapsed, model });
+			};
 
-			proc.on("error", (err) => {
-				state.proc = null;
-				clearInterval(state.timer);
-				state.status = "error";
-				state.lastWork = `Error: ${err.message}`;
-				state.summary = state.lastWork;
-				invalidateAgentWidget(state);
-
-				// Auto-remove widget ~30s after error
-				setTimeout(() => {
-					if (state.status !== "running") {
-						removeAgentWidget(state);
+			const handleStdoutLine = (line: string) => {
+				try {
+					const event = JSON.parse(line);
+					if (event.type === "message_update") {
+						const delta = event.assistantMessageEvent;
+						if (delta?.type === "text_delta") {
+							textChunks.push(delta.delta || "");
+							state.textChunks.push(delta.delta || "");
+							const full = textChunks.join("");
+							const last = full.split("\n").filter((l: string) => l.trim()).pop() || "";
+							state.lastWork = last;
+							state.summary = last;
+							state.summaryLines = full.split("\n").map((l: string) => l.trim()).filter(Boolean).slice(-3);
+							invalidateAgentWidget(state);
+						}
+					} else if (event.type === "tool_execution_start") {
+						state.toolCount++;
+						invalidateAgentWidget(state);
+					} else if (event.type === "message_end") {
+						const msg = event.message;
+						if (msg?.usage && contextWindow > 0) {
+							state.contextPct = ((msg.usage.input || 0) / contextWindow) * 100;
+							const level = contextBudgetLevel(state.contextPct);
+							if (level === "warn" && !state._warnSent) {
+								state._warnSent = true;
+								ctx.ui.notify(`${displayName(state.def.name)} Context: ${Math.round(state.contextPct)}%`, "info");
+							} else if (level === "critical" && !state._criticalWarned) {
+								state._criticalWarned = true;
+								ctx.ui.notify(`${displayName(state.def.name)} Context: ${Math.round(state.contextPct)}% — Agent will Cycle-Memory soon`, "info");
+							}
+							invalidateAgentWidget(state);
+						}
+					} else if (event.type === "agent_end") {
+						const msgs = event.messages || [];
+						const last = [...msgs].reverse().find((m: any) => m.role === "assistant");
+						if (last?.usage && contextWindow > 0) {
+							state.contextPct = ((last.usage.input || 0) / contextWindow) * 100;
+							invalidateAgentWidget(state);
+						}
 					}
-				}, 30_000);
+				} catch {}
+			};
 
-				resolve({
-					output: `Error spawning agent: ${err.message}`,
-					exitCode: 1,
-					elapsed: Date.now() - startTime,
-					model,
-				});
+			let stderrBuf = "";
+			if (isToolkitCliAgent(state.def.name)) {
+				spawnToolkitWorker(state.def, {
+					task,
+					sessionFile: agentSessionFile,
+					cwd: ctx.cwd,
+					env: spawnEnv,
+					onStdoutLine: handleStdoutLine,
+					onStderr: (chunk: string) => { stderrBuf += chunk; },
+				}).then(({ exitCode }) => finish(exitCode, stderrBuf));
+				return;
+			}
+
+			const proc = spawn("pi", args, {
+				stdio: ["ignore", "pipe", "pipe"],
+				env: spawnEnv,
+				cwd: ctx.cwd,
+			});
+			state.proc = proc;
+
+			let buffer = "";
+			proc.stdout!.setEncoding("utf-8");
+			proc.stdout!.on("data", (chunk: string) => {
+				buffer += chunk;
+				const lines = buffer.split("\n");
+				buffer = lines.pop() || "";
+				for (const line of lines) {
+					if (!line.trim()) continue;
+					handleStdoutLine(line);
+				}
 			});
 
+			proc.stderr!.setEncoding("utf-8");
+			proc.stderr!.on("data", (chunk: string) => { stderrBuf += chunk; });
+			proc.on("close", (code) => {
+				if (buffer.trim()) handleStdoutLine(buffer);
+				finish(code, stderrBuf);
+			});
+			proc.on("error", (err) => finish(1, `Error spawning agent: ${err.message}`));
 			proc.on("exit", () => { clearInterval(state.timer); });
 		});
 	}

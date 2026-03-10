@@ -29,8 +29,8 @@ import { cleanOldSessionFiles } from "./lib/subagent-cleanup.ts";
 import { buildCommanderPrompt } from "./lib/commander-prompt.ts";
 import { preClaimTask, postCompleteTask, postFailTask } from "./lib/commander-lifecycle.ts";
 import { parseGroupCreateResult, buildGroupCreatePayload } from "./lib/commander-sync.ts";
-import { scanAgentDefs, resolveAgentByName, loadAgentModelsConfig, resolveAgentModelString, type AgentDef, type AgentModelsConfig } from "./lib/agent-defs.ts";
-import { resolveToolkitWorkerModel } from "./lib/toolkit-cli.ts";
+import { scanAgentDefs, scanToolkitAgentDefs, resolveAgentByName, loadAgentModelsConfig, loadToolkitModelsConfig, resolveAgentModelString, type AgentDef, type AgentModelsConfig } from "./lib/agent-defs.ts";
+import { resolveToolkitWorkerModel, isToolkitCliAgent, spawnToolkitWorker } from "./lib/toolkit-cli.ts";
 
 // ── Commander availability ───────────────────────────────────────────────────
 
@@ -84,6 +84,7 @@ interface SubState {
 	sessionFile: string;   // persistent JSONL session path — used by /subcont to resume
 	turnCount: number;     // increments each time /subcont continues this agent
 	summary?: string;      // pre-written summary shown in widget (no markdown)
+	summaryLines?: string[]; // up to 2 recent CLI/output lines for richer widget preview
 	proc?: any;            // active ChildProcess ref (for kill on /subrm)
 	commanderTaskId?: number;  // pre-assigned Commander task ID
 	autoRemove?: boolean;      // auto-remove widget ~30s after done (default: true)
@@ -174,6 +175,9 @@ export default function (pi: ExtensionAPI) {
 				const delta = event.assistantMessageEvent;
 				if (delta?.type === "text_delta") {
 					state.textChunks.push(delta.delta || "");
+					const full = state.textChunks.join("");
+					state.summary = full.split("\n").map((l) => l.trim()).filter(Boolean).pop() || state.summary;
+					state.summaryLines = full.split("\n").map((l) => l.trim()).filter(Boolean).slice(-3);
 					invalidateWidget(state.id);
 				}
 			} else if (type === "tool_execution_start") {
@@ -251,24 +255,6 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		return new Promise<void>((resolve) => {
-			const proc = spawn("pi", [
-				"--mode", "json",
-				"-p",
-				"--session", state.sessionFile,   // persistent session for /subcont resumption
-				"--no-extensions",
-				...extensions,
-				"--model", model,
-				"--tools", tools,
-				"--thinking", "off",
-				...systemPromptArgs,
-				prompt,
-			], {
-				stdio: ["ignore", "pipe", "pipe"],
-				env: spawnEnv,
-			});
-
-			state.proc = proc;
-
 			const startTime = Date.now();
 			const isScout = (globalThis as any).__piScoutId === state.id;
 			const timer = setInterval(() => {
@@ -277,26 +263,7 @@ export default function (pi: ExtensionAPI) {
 				if (isScout) publishScoutStatus(state);
 			}, 1000);
 
-			let buffer = "";
-
-			proc.stdout!.setEncoding("utf-8");
-			proc.stdout!.on("data", (chunk: string) => {
-				buffer += chunk;
-				const lines = buffer.split("\n");
-				buffer = lines.pop() || "";
-				for (const line of lines) processLine(state, line);
-			});
-
-			proc.stderr!.setEncoding("utf-8");
-			proc.stderr!.on("data", (chunk: string) => {
-				if (chunk.trim()) {
-					state.textChunks.push(chunk);
-					invalidateWidget(state.id);
-				}
-			});
-
-			proc.on("close", (code) => {
-				if (buffer.trim()) processLine(state, buffer);
+			const finish = (code: number | null) => {
 				clearInterval(timer);
 				state.elapsed = Date.now() - startTime;
 				state.status = code === 0 ? "done" : "error";
@@ -359,15 +326,73 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				resolve();
+			};
+
+			if (isToolkitCliAgent(state.name)) {
+				spawnToolkitWorker({
+					name: state.name,
+					tools,
+					systemPrompt: [agentDef?.systemPrompt, ...systemPromptArgs.filter((_, i) => i % 2 === 1)].filter(Boolean).join("\n\n"),
+				}, {
+					task: prompt,
+					sessionFile: state.sessionFile,
+					env: spawnEnv,
+					onStdoutLine: (line: string) => processLine(state, line),
+					onStderr: (chunk: string) => {
+						if (chunk.trim()) {
+							state.textChunks.push(chunk);
+							invalidateWidget(state.id);
+						}
+					},
+				}).then(({ exitCode }) => {
+					finish(exitCode);
+				});
+				return;
+			}
+
+			const proc = spawn("pi", [
+				"--mode", "json",
+				"-p",
+				"--session", state.sessionFile,
+				"--no-extensions",
+				...extensions,
+				"--model", model,
+				"--tools", tools,
+				"--thinking", "off",
+				...systemPromptArgs,
+				prompt,
+			], {
+				stdio: ["ignore", "pipe", "pipe"],
+				env: spawnEnv,
+			});
+
+			state.proc = proc;
+			let buffer = "";
+
+			proc.stdout!.setEncoding("utf-8");
+			proc.stdout!.on("data", (chunk: string) => {
+				buffer += chunk;
+				const lines = buffer.split("\n");
+				buffer = lines.pop() || "";
+				for (const line of lines) processLine(state, line);
+			});
+
+			proc.stderr!.setEncoding("utf-8");
+			proc.stderr!.on("data", (chunk: string) => {
+				if (chunk.trim()) {
+					state.textChunks.push(chunk);
+					invalidateWidget(state.id);
+				}
+			});
+
+			proc.on("close", (code) => {
+				if (buffer.trim()) processLine(state, buffer);
+				finish(code);
 			});
 
 			proc.on("error", (err) => {
-				clearInterval(timer);
-				state.status = "error";
-				state.proc = undefined;
 				state.textChunks.push(`Error: ${err.message}`);
-				invalidateWidget(state.id);
-				resolve();
+				finish(1);
 			});
 
 			proc.on("exit", () => { clearInterval(timer); });
@@ -811,7 +836,10 @@ export default function (pi: ExtensionAPI) {
 		const extDir = path.dirname(fileURLToPath(import.meta.url));
 		const extProjectDir = path.resolve(extDir, "..");
 		modelsConfig = loadAgentModelsConfig(ctx.cwd || process.cwd(), extProjectDir);
-		knownAgents = scanAgentDefs(ctx.cwd || process.cwd(), extProjectDir, modelsConfig);
+		const standardAgents = scanAgentDefs(ctx.cwd || process.cwd(), extProjectDir, modelsConfig);
+		const toolkitModelsConfig = loadToolkitModelsConfig(ctx.cwd || process.cwd(), extProjectDir);
+		const toolkitAgents = scanToolkitAgentDefs(ctx.cwd || process.cwd(), extProjectDir, toolkitModelsConfig);
+		knownAgents = new Map([...standardAgents, ...toolkitAgents]);
 
 		// Pre-spawn scout subagent so it's always ready for recon tasks
 		preSpawnScout(ctx);

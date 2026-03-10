@@ -1,19 +1,22 @@
-# Toolkit Agent Refactor Plan
+# Corrective Plan: Real CLI Output for Toolkit Agents
 
 ## Goal
-Make toolkit agents represent installed CLI software/integrations rather than fixed model personas. Use a lightweight main worker agent for execution, with the real differentiation coming from the CLI tool each toolkit agent invokes.
+Make toolkit agents invoke the actual installed CLI applications so the widget shows real shell output from tools like Cursor, Codex, Droid, Gemini, etc., instead of synthetic filler/completion text.
 
-## Proposed Approach
-- [x] Inspect and preserve the existing standard agent configuration separately from toolkit-specific agents.
-- [x] Identify where toolkit agents are currently mapped directly to model/provider pairs.
-- [x] Refactor toolkit agent definitions so they describe a CLI-backed integration identity and execution method instead of a model-specific identity.
-- [x] Introduce or reuse a shared lightweight worker model for toolkit agent execution, so toolkit agents delegate work through CLI tools rather than through bespoke model assignments.
-- [x] Update any model resolution / dispatch code paths so toolkit agents route through the CLI worker flow.
-- [x] Adjust related config, sync logic, or tests/docs that assume toolkit agents are model-specific.
-- [x] Verify at least one toolkit agent resolves and runs through the new CLI-backed path.
-- [ ] The default model is claude-haiku-4-5
+## Problem Confirmed
+- The current toolkit path still routes through `spawnToolkitWorker` in `agent/extensions/lib/toolkit-cli.ts`.
+- That helper is still spawning `pi`, not the real installed CLI binaries.
+- As a result, the widget is rendering prompt-completion text instead of true terminal output from the underlying apps.
 
-## Expected Outcome
-- Toolkit agents behave like wrappers for installed software or CLI integrations.
-- A main worker agent handles the actual command-line execution.
-- Model configuration becomes an implementation detail of the worker, not the identity of the toolkit agent.
+## Plan
+- [ ] Refactor `agent/extensions/lib/toolkit-cli.ts` so toolkit agents resolve to real CLI commands/binaries instead of spawning `pi` for toolkit execution.
+- [ ] Introduce a clear per-toolkit-agent command mapping and execution strategy for installed CLIs like `cursor-agent`, `codex`, `droid`, `gemini`, `qwen`, `opencode`, `groq`, and `crush`.
+- [ ] Stream real stdout/stderr from those child processes into the existing widget update path so the preview lines come from actual shell output.
+- [ ] Preserve safe fallback/error behavior when a CLI is missing or exits unexpectedly.
+- [ ] Verify with visible tests that at least `cursor-agent`, `codex-agent`, and `droid-agent` show real CLI-driven output rather than synthetic placeholder text.
+- [ ] These changes should ONLY affect the toolkit cli agents not our normal agents like scout, reviewer, etc
+
+## Notes
+- This is a behavior fix, not just a styling fix.
+- The terminal preview must come from the underlying app process output.
+- Keep the current widget layout, but feed it real shell output.

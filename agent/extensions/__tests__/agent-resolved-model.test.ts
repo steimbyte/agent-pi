@@ -2,6 +2,7 @@
 // ABOUTME: and cleared on reset, so the detail view can display the actual model.
 
 import { describe, it, expect } from "vitest";
+import { resolveToolkitWorkerModel, TOOLKIT_WORKER_MODEL } from "../lib/toolkit-cli.ts";
 
 type AgentStatus = "idle" | "running" | "done" | "error";
 
@@ -33,7 +34,7 @@ function resolveModel(
 	state: AgentState,
 	_parentModel: { provider: string; id: string } | null,
 ): string {
-	const model = state.def.model || DEFAULT_SUBAGENT_MODEL;
+	const model = resolveToolkitWorkerModel(state.def.name, state.def.model || DEFAULT_SUBAGENT_MODEL);
 	state.resolvedModel = model;
 	return model;
 }
@@ -75,9 +76,15 @@ describe("resolvedModel", () => {
 	it("uses default subagent model when agent model is empty (ignores parent)", () => {
 		const state = makeState({ def: { name: "planner", model: "" } });
 		const model = resolveModel(state, { provider: "anthropic", id: "claude-opus-4-20250514" });
-		// Should NOT inherit the parent model — should use the lightweight default
 		expect(model).toBe(DEFAULT_SUBAGENT_MODEL);
 		expect(state.resolvedModel).toBe(DEFAULT_SUBAGENT_MODEL);
+	});
+
+	it("forces toolkit agents onto the shared toolkit worker model", () => {
+		const state = makeState({ def: { name: "codex-agent", model: "openai/gpt-4o" } });
+		const model = resolveModel(state, null);
+		expect(model).toBe(TOOLKIT_WORKER_MODEL);
+		expect(state.resolvedModel).toBe(TOOLKIT_WORKER_MODEL);
 	});
 
 	it("uses default when no parent model and no agent model", () => {

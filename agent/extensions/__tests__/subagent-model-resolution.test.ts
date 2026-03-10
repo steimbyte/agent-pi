@@ -10,6 +10,7 @@ import {
 	type AgentDef,
 	type AgentModelsConfig,
 } from "../lib/agent-defs.ts";
+import { resolveToolkitWorkerModel, TOOLKIT_WORKER_MODEL } from "../lib/toolkit-cli.ts";
 
 // ── Test fixtures ────────────────────────────────────────────────────────────
 
@@ -103,7 +104,10 @@ describe("subagent model resolution (end-to-end)", () => {
 	): string {
 		const agentDef = resolveAgentByName(agentName, knownAgents);
 		const configModel = resolveAgentModelString(agentName, config);
-		return callerModel || agentDef?.model || configModel || buildModelString(config.default);
+		return resolveToolkitWorkerModel(
+			agentName,
+			callerModel || agentDef?.model || configModel || buildModelString(config.default),
+		);
 	}
 
 	describe("SCOUT agent", () => {
@@ -132,6 +136,12 @@ describe("subagent model resolution (end-to-end)", () => {
 	describe("PLANNER agent", () => {
 		it("uses github-copilot/gemini-3.1-pro-preview from models.json", () => {
 			expect(resolveModel(undefined, "PLANNER")).toBe("github-copilot/gemini-3.1-pro-preview");
+		});
+	});
+
+	describe("toolkit agents", () => {
+		it("force toolkit agents onto the shared worker model", () => {
+			expect(resolveModel(undefined, "CODEX-AGENT")).toBe(TOOLKIT_WORKER_MODEL);
 		});
 	});
 
