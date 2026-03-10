@@ -238,7 +238,7 @@ export function generateFileViewerHTML(opts: {
 
   function refreshMeta() {
     metaPath.textContent = 'Path: ' + FILE_PATH;
-    metaLines.textContent = 'Lines: ' + currentContent.split('\n').length + (LINE_RANGE ? ' (requested range ' + LINE_RANGE + ')' : '');
+    metaLines.textContent = 'Lines: ' + currentContent.split('\\n').length + (LINE_RANGE ? ' (requested range ' + LINE_RANGE + ')' : '');
     metaMode.textContent = 'Mode: ' + (mode === 'view' ? 'Read' : 'Edit') + (EDITABLE ? '' : ' (read-only)');
   }
 
@@ -321,7 +321,7 @@ export function generateFileViewerHTML(opts: {
   });
 
   refreshUI();
-</script>
+<\/script>
 </body>
 </html>`;
 }
