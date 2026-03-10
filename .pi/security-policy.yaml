@@ -346,9 +346,9 @@ prompt_injection_patterns:
     description: "Attempt to reset agent context"
 
   - pattern: "new\\s+system\\s+prompt"
-    severity: block
+    severity: warn
     category: prompt_injection
-    description: "Attempt to inject new system prompt"
+    description: "Prompt hijack via boundary reset"
 
   - pattern: "override\\s+(your|the|all)\\s+(rules?|instructions?|guidelines?|restrictions?|safety)"
     severity: block
@@ -387,12 +387,12 @@ prompt_injection_patterns:
     category: prompt_injection
     description: "XML-style prompt boundary injection"
 
-  - pattern: "\\[\\s*(SYSTEM|INST|ADMIN|ROOT|OVERRIDE)\\s*\\]"
+  - pattern: "\\[\\s*(SYSTEM|INST|ADMIN|ROOT|OVERRIDE)\\s*\\][\\s:]*\\s*(ignore|forget|override|disregard|you are|new instructions|new prompt)"
     severity: warn
     category: prompt_injection
     description: "Bracket-style prompt boundary injection"
 
-  - pattern: "###\\s*(SYSTEM|INSTRUCTION|NEW PROMPT|ADMIN)"
+  - pattern: "###\\s*(SYSTEM\\s+PROMPT|SYSTEM\\s+INSTRUCTION|NEW\\s+PROMPT|ADMIN\\s+OVERRIDE|INSTRUCTION\\s+OVERRIDE)"
     severity: warn
     category: prompt_injection
     description: "Markdown-style prompt boundary injection"

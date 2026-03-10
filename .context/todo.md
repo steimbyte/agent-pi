@@ -1,19 +1,23 @@
-# Fix Plan Viewer False Negative
+# Replace Editor Button Text With Icons
 
-## Problem
-`show_plan` returns "Plan viewer closed without approval" even though the page loads fine.
-Introduced when viewer-session.ts was added (commit 53a3654).
+## Goal
+Swap the `Cursor`, `Windsurf`, and `VS Code` text labels in the file viewer toolbar for clean inline SVG icons.
 
-## Root Cause
-`notifyViewerOpen()` calls `ctx.ui.addMessage("assistant", ...)` DURING tool execution,
-which injects a message into the conversation while `waitForResult()` is still blocking.
-This likely causes the framework to misinterpret the tool state.
+## Approach
+- Use **inline monochrome SVGs** embedded directly in the HTML template
+- Keep buttons accessible with `title` and `aria-label`
+- Keep buttons the same size and clickable area as today
+- Preserve existing launch behavior exactly
 
 ## Plan
+- [ ] Add small inline SVG icon markup for Cursor, Windsurf, and VS Code buttons
+- [ ] Keep tooltips / aria-labels so the buttons remain understandable
+- [ ] Add compact icon-button styling (centered, same toolbar alignment)
+- [ ] Keep fallback text hidden visually only if needed
+- [ ] Test that buttons still launch editors correctly
 
-- [x] 1. Explore codebase and identify root cause
-- [ ] 2. Fix `notifyViewerOpen` — remove `addMessage` call, keep only `ctx.ui.notify`
-- [ ] 3. Add abort signal handling to `waitForResult()` so the tool responds to framework cancellation
-- [ ] 4. Apply same fixes to completion-report.ts and spec-viewer.ts
-- [ ] 5. Remove Commander file:open references from mode-prompts.ts
-- [ ] 6. Test by building the project
+## Notes
+- No external icon assets
+- No emoji
+- No dependency changes
+- Prefer crisp monochrome icons that fit the current dark UI
