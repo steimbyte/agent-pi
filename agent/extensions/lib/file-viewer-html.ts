@@ -472,7 +472,14 @@ export function generateFileViewerHTML(opts: {
     gutter.innerHTML = html;
   }
 
+  var lastHighlightedContent = null;
+
   function highlightCode() {
+    /* Skip re-highlight if content unchanged */
+    if (currentContent === lastHighlightedContent) {
+      updateGutter(currentContent);
+      return;
+    }
     /* Highlight with hljs — use .highlight() for synchronous result */
     if (typeof hljs !== 'undefined') {
       var lang = (detectedLang && hljs.getLanguage(detectedLang)) ? detectedLang : null;
@@ -487,6 +494,7 @@ export function generateFileViewerHTML(opts: {
     } else {
       codeBlock.textContent = currentContent;
     }
+    lastHighlightedContent = currentContent;
     /* Update line number gutter — completely separate from code markup */
     updateGutter(currentContent);
   }
@@ -654,8 +662,12 @@ export function generateFileViewerHTML(opts: {
     }
   });
 
-  /* ── Init ── */
-  refreshUI();
+  /* ── Init — wait for all scripts (hljs CDN) to load ── */
+  if (document.readyState === 'complete') {
+    refreshUI();
+  } else {
+    window.addEventListener('load', function() { refreshUI(); });
+  }
 <\/script>
 </body>
 </html>`;
