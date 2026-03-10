@@ -16,6 +16,8 @@ export function generateFileViewerHTML(opts: {
 	const escapedLineRange = JSON.stringify(opts.lineRange || "");
 	const escapedEditable = JSON.stringify(opts.editable);
 	const escapedLanguage = JSON.stringify(opts.language || "");
+	const lineCount = Math.max(1, opts.content.endsWith("\n") ? opts.content.split("\n").length - 1 : opts.content.split("\n").length);
+	const initialGutterHtml = Array.from({ length: lineCount }, (_, i) => `<span>${i + 1}</span>`).join("");
 
 	return `<!DOCTYPE html>
 <html lang="en">
@@ -345,7 +347,7 @@ export function generateFileViewerHTML(opts: {
     <div id="viewerWrap" class="viewer-wrap">
       <div class="viewer-table">
         <div class="viewer-row">
-          <div id="gutter" class="gutter"></div>
+          <div id="gutter" class="gutter">${initialGutterHtml}</div>
           <div class="viewer-code">
             <pre><code id="codeBlock"></code></pre>
           </div>
@@ -492,7 +494,6 @@ export function generateFileViewerHTML(opts: {
   function highlightCode() {
     /* Skip re-highlight if content unchanged */
     if (currentContent === lastHighlightedContent) {
-      updateGutter(currentContent);
       return;
     }
     /* Highlight with hljs — use .highlight() for synchronous result */
@@ -510,8 +511,6 @@ export function generateFileViewerHTML(opts: {
       codeBlock.textContent = currentContent;
     }
     lastHighlightedContent = currentContent;
-    /* Update line number gutter — completely separate from code markup */
-    updateGutter(currentContent);
   }
 
   /* ── Sync editor line numbers on scroll ── */
@@ -550,7 +549,6 @@ export function generateFileViewerHTML(opts: {
 
     if (!isEdit) {
       highlightCode();
-      updateGutter(currentContent);
     } else {
       if (editor.value !== currentContent) editor.value = currentContent;
       generateLineNums(currentContent, editorLines);
@@ -596,6 +594,7 @@ export function generateFileViewerHTML(opts: {
       currentContent = editor.value;
       modified = currentContent !== savedContent;
       mode = 'view';
+      updateGutter(currentContent);
       setNotice(modified ? 'Unsaved changes' : '', modified ? 'warning' : '');
       refreshUI();
     }
@@ -606,6 +605,7 @@ export function generateFileViewerHTML(opts: {
     currentContent = editor.value;
     modified = currentContent !== savedContent;
     generateLineNums(currentContent, editorLines);
+    updateGutter(currentContent);
     unsavedDot.classList.toggle('visible', modified);
     saveBtn.disabled = !modified;
   });
@@ -637,6 +637,7 @@ export function generateFileViewerHTML(opts: {
       if (!data.ok) throw new Error(data.error || 'Save failed');
       savedContent = currentContent;
       modified = false;
+      updateGutter(currentContent);
       setNotice('Saved', 'success');
       setTimeout(function() { if (!modified) setNotice('', ''); }, 2000);
       refreshUI();
