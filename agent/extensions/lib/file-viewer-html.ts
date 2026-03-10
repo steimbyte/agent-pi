@@ -41,7 +41,7 @@ export function generateFileViewerHTML(opts: {
     --error: #e85858;
     --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
     --mono: "SF Mono", "Fira Code", "JetBrains Mono", Consolas, monospace;
-    --line-num-width: 50px;
+    --line-num-width: 54px;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -129,6 +129,7 @@ export function generateFileViewerHTML(opts: {
   button.primary { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
   button.primary:hover { background: rgba(41, 128, 185, 0.22); }
   button.success { background: rgba(72, 216, 137, 0.1); border-color: var(--success); color: var(--success); }
+  button.success:hover { background: rgba(72, 216, 137, 0.2); }
   button:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
   .save-hint {
     font-size: 10px;
@@ -183,9 +184,14 @@ export function generateFileViewerHTML(opts: {
     flex: 1;
     min-height: 0;
     overflow: auto;
-    display: flex;
+    position: relative;
   }
   .viewer-wrap.hidden { display: none; }
+
+  .viewer-inner {
+    display: flex;
+    min-height: 100%;
+  }
 
   .line-numbers {
     flex-shrink: 0;
@@ -199,7 +205,9 @@ export function generateFileViewerHTML(opts: {
     font-size: 13px;
     line-height: 1.6;
     color: var(--text-dim);
-    overflow: hidden;
+    position: sticky;
+    left: 0;
+    z-index: 1;
   }
   .line-numbers span {
     display: block;
@@ -209,7 +217,6 @@ export function generateFileViewerHTML(opts: {
   .viewer-code {
     flex: 1;
     min-width: 0;
-    overflow-x: auto;
   }
   .viewer-code pre {
     margin: 0;
@@ -233,6 +240,7 @@ export function generateFileViewerHTML(opts: {
     flex: 1;
     min-height: 0;
     display: none;
+    position: relative;
     overflow: hidden;
   }
   .editor-wrap.visible { display: flex; }
@@ -271,7 +279,7 @@ export function generateFileViewerHTML(opts: {
     tab-size: 2;
     white-space: pre;
     overflow-wrap: normal;
-    overflow-x: auto;
+    overflow: auto;
   }
 
   /* ── Unsaved dot indicator ── */
@@ -282,8 +290,24 @@ export function generateFileViewerHTML(opts: {
     border-radius: 50%;
     background: var(--warning);
     margin-left: 4px;
+    vertical-align: middle;
   }
   .unsaved-dot.visible { display: inline-block; }
+
+  /* ── Done state overlay ── */
+  .done-banner {
+    display: none;
+    padding: 12px 18px;
+    background: rgba(72, 216, 137, 0.08);
+    border-bottom: 1px solid rgba(72, 216, 137, 0.2);
+    color: var(--success);
+    font-family: var(--mono);
+    font-size: 13px;
+    align-items: center;
+    gap: 8px;
+  }
+  .done-banner.visible { display: flex; }
+  .done-banner .done-text { flex: 1; }
 </style>
 </head>
 <body>
@@ -311,12 +335,17 @@ export function generateFileViewerHTML(opts: {
   </div>
 
   <div class="content">
+    <div id="doneBanner" class="done-banner">
+      <span class="done-text">Done — returned to CLI. This page is now read-only.</span>
+    </div>
     <div id="notice" class="notice"></div>
 
     <div id="viewerWrap" class="viewer-wrap">
-      <div id="lineNumbers" class="line-numbers"></div>
-      <div id="viewerCode" class="viewer-code">
-        <pre><code id="codeBlock"></code></pre>
+      <div class="viewer-inner">
+        <div id="lineNumbers" class="line-numbers"></div>
+        <div id="viewerCode" class="viewer-code">
+          <pre><code id="codeBlock"></code></pre>
+        </div>
       </div>
     </div>
 
@@ -336,43 +365,45 @@ export function generateFileViewerHTML(opts: {
 <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/rust.min.js"><\/script>
 <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/go.min.js"><\/script>
 <script>
-  const PORT = ${opts.port};
-  const TITLE = ${escapedTitle};
-  const FILE_PATH = ${escapedFilePath};
-  const ORIGINAL = ${escapedContent};
-  const LINE_RANGE = ${escapedLineRange};
-  const EDITABLE = ${escapedEditable};
-  const LANGUAGE = ${escapedLanguage};
+  var PORT = ${opts.port};
+  var TITLE = ${escapedTitle};
+  var FILE_PATH = ${escapedFilePath};
+  var ORIGINAL = ${escapedContent};
+  var LINE_RANGE = ${escapedLineRange};
+  var EDITABLE = ${escapedEditable};
+  var LANGUAGE = ${escapedLanguage};
 
-  let currentContent = ORIGINAL;
-  let savedContent = ORIGINAL;
-  let modified = false;
-  let mode = 'view';
+  var currentContent = ORIGINAL;
+  var savedContent = ORIGINAL;
+  var modified = false;
+  var mode = 'view';
+  var isDone = false;
 
   /* ── DOM refs ── */
-  const titleText = document.getElementById('titleText');
-  const subtitleText = document.getElementById('subtitleText');
-  const unsavedDot = document.getElementById('unsavedDot');
-  const langBadge = document.getElementById('langBadge');
-  const metaPath = document.getElementById('metaPath');
-  const metaLines = document.getElementById('metaLines');
-  const metaMode = document.getElementById('metaMode');
-  const metaSize = document.getElementById('metaSize');
-  const notice = document.getElementById('notice');
-  const viewerWrap = document.getElementById('viewerWrap');
-  const lineNumbers = document.getElementById('lineNumbers');
-  const codeBlock = document.getElementById('codeBlock');
-  const editorWrap = document.getElementById('editorWrap');
-  const editorLines = document.getElementById('editorLines');
-  const editor = document.getElementById('editor');
-  const copyBtn = document.getElementById('copyBtn');
-  const toggleBtn = document.getElementById('toggleBtn');
-  const saveBtn = document.getElementById('saveBtn');
-  const saveHint = document.getElementById('saveHint');
-  const doneBtn = document.getElementById('doneBtn');
+  var titleText = document.getElementById('titleText');
+  var subtitleText = document.getElementById('subtitleText');
+  var unsavedDot = document.getElementById('unsavedDot');
+  var langBadge = document.getElementById('langBadge');
+  var metaPath = document.getElementById('metaPath');
+  var metaLines = document.getElementById('metaLines');
+  var metaMode = document.getElementById('metaMode');
+  var metaSize = document.getElementById('metaSize');
+  var notice = document.getElementById('notice');
+  var doneBanner = document.getElementById('doneBanner');
+  var viewerWrap = document.getElementById('viewerWrap');
+  var lineNumbers = document.getElementById('lineNumbers');
+  var codeBlock = document.getElementById('codeBlock');
+  var editorWrap = document.getElementById('editorWrap');
+  var editorLines = document.getElementById('editorLines');
+  var editor = document.getElementById('editor');
+  var copyBtn = document.getElementById('copyBtn');
+  var toggleBtn = document.getElementById('toggleBtn');
+  var saveBtn = document.getElementById('saveBtn');
+  var saveHint = document.getElementById('saveHint');
+  var doneBtn = document.getElementById('doneBtn');
 
   /* ── Language detection ── */
-  const EXT_MAP = {
+  var EXT_MAP = {
     js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
     ts: 'typescript', tsx: 'typescript', mts: 'typescript', cts: 'typescript',
     py: 'python', rb: 'ruby', rs: 'rust', go: 'go',
@@ -396,7 +427,7 @@ export function generateFileViewerHTML(opts: {
     graphql: 'graphql', gql: 'graphql',
     proto: 'protobuf',
     tf: 'hcl', hcl: 'hcl',
-    env: 'bash', gitignore: 'bash',
+    env: 'bash', gitignore: 'bash'
   };
 
   function detectLanguage() {
@@ -404,12 +435,8 @@ export function generateFileViewerHTML(opts: {
     var parts = FILE_PATH.split('/');
     var filename = parts[parts.length - 1] || '';
     var lower = filename.toLowerCase();
-
-    /* Handle dotfiles and special filenames */
     if (lower === 'dockerfile') return 'dockerfile';
     if (lower === 'makefile' || lower === 'gnumakefile') return 'makefile';
-    if (lower === '.env' || lower.startsWith('.env.')) return 'bash';
-
     var dotIdx = filename.lastIndexOf('.');
     if (dotIdx === -1) return '';
     var ext = filename.substring(dotIdx + 1).toLowerCase();
@@ -433,7 +460,6 @@ export function generateFileViewerHTML(opts: {
   function generateLineNums(content, container) {
     var lines = content.split('\\n');
     var count = lines.length;
-    /* Remove trailing empty line from final newline */
     if (lines.length > 1 && lines[lines.length - 1] === '') count--;
     var html = '';
     for (var i = 1; i <= count; i++) {
@@ -467,7 +493,7 @@ export function generateFileViewerHTML(opts: {
     var lineCount = currentContent.split('\\n').length;
     if (currentContent.endsWith('\\n') && lineCount > 1) lineCount--;
     metaLines.textContent = 'Lines: ' + lineCount + (LINE_RANGE ? ' (range ' + LINE_RANGE + ')' : '');
-    metaMode.textContent = 'Mode: ' + (mode === 'view' ? 'Read' : 'Edit') + (EDITABLE ? '' : ' (read-only)');
+    metaMode.textContent = isDone ? 'Mode: Read-only (done)' : ('Mode: ' + (mode === 'view' ? 'Read' : 'Edit') + (EDITABLE ? '' : ' (read-only)'));
     metaSize.textContent = 'Size: ' + formatBytes(new Blob([currentContent]).size);
   }
 
@@ -484,7 +510,7 @@ export function generateFileViewerHTML(opts: {
       langBadge.style.display = 'none';
     }
 
-    var isEdit = mode === 'edit' && EDITABLE;
+    var isEdit = mode === 'edit' && EDITABLE && !isDone;
 
     /* Toggle viewer/editor visibility */
     viewerWrap.classList.toggle('hidden', isEdit);
@@ -497,10 +523,21 @@ export function generateFileViewerHTML(opts: {
       generateLineNums(currentContent, editorLines);
     }
 
-    toggleBtn.textContent = isEdit ? 'Preview' : (EDITABLE ? 'Edit' : 'Read Only');
-    toggleBtn.disabled = !EDITABLE;
-    saveBtn.disabled = !EDITABLE || !modified;
-    saveHint.textContent = EDITABLE ? (navigator.platform.indexOf('Mac') > -1 ? '\\u2318S' : 'Ctrl+S') : '';
+    /* Button states */
+    if (isDone) {
+      toggleBtn.textContent = 'Read Only';
+      toggleBtn.disabled = true;
+      saveBtn.disabled = true;
+      doneBtn.disabled = true;
+      doneBtn.textContent = 'Done';
+    } else {
+      toggleBtn.textContent = isEdit ? 'Preview' : (EDITABLE ? 'Edit' : 'Read Only');
+      toggleBtn.disabled = !EDITABLE;
+      saveBtn.disabled = !EDITABLE || !modified;
+      doneBtn.disabled = false;
+    }
+
+    saveHint.textContent = (EDITABLE && !isDone) ? (navigator.platform.indexOf('Mac') > -1 ? '\\u2318S' : 'Ctrl+S') : '';
     refreshMeta();
   }
 
@@ -516,7 +553,7 @@ export function generateFileViewerHTML(opts: {
 
   /* ── Toggle view/edit ── */
   toggleBtn.addEventListener('click', function() {
-    if (!EDITABLE) return;
+    if (!EDITABLE || isDone) return;
     if (mode === 'view') {
       mode = 'edit';
       setNotice('Edit mode — changes are local until you Save', 'warning');
@@ -556,7 +593,7 @@ export function generateFileViewerHTML(opts: {
 
   /* ── Save ── */
   function doSave() {
-    if (!EDITABLE || !modified) return;
+    if (!EDITABLE || !modified || isDone) return;
     currentContent = editor.value;
     fetch('http://127.0.0.1:' + PORT + '/save', {
       method: 'POST',
@@ -577,32 +614,35 @@ export function generateFileViewerHTML(opts: {
 
   saveBtn.addEventListener('click', doSave);
 
-  /* ── Done ── */
+  /* ── Done — signal CLI but keep page open as read-only ── */
   doneBtn.addEventListener('click', function() {
+    if (isDone) return;
     if (mode === 'edit') {
       currentContent = editor.value;
       modified = currentContent !== savedContent;
     }
+
+    /* Signal the CLI server */
     fetch('http://127.0.0.1:' + PORT + '/result', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'done', modified: modified, content: currentContent })
     });
+
+    /* Switch to done/read-only state */
+    isDone = true;
+    mode = 'view';
+    doneBanner.classList.add('visible');
+    setNotice('', '');
+    refreshUI();
   });
 
   /* ── Keyboard shortcuts ── */
   document.addEventListener('keydown', function(e) {
-    /* Cmd/Ctrl+S = Save */
     if ((e.metaKey || e.ctrlKey) && e.key === 's') {
       e.preventDefault();
-      if (mode === 'edit') doSave();
+      if (mode === 'edit' && !isDone) doSave();
     }
-  });
-
-  /* ── Sync viewer scroll with line numbers ── */
-  var viewerCode = document.getElementById('viewerCode');
-  viewerCode.addEventListener('scroll', function() {
-    lineNumbers.style.transform = 'translateY(-' + viewerCode.scrollTop + 'px)';
   });
 
   /* ── Init ── */
