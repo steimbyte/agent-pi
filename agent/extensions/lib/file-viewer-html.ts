@@ -535,6 +535,7 @@ export function generateFileViewerHTML(opts: {
 
     if (!isEdit) {
       highlightCode();
+      updateGutter(currentContent);
     } else {
       if (editor.value !== currentContent) editor.value = currentContent;
       generateLineNums(currentContent, editorLines);
