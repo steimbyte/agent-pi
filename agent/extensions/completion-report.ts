@@ -594,16 +594,18 @@ export default function (pi: ExtensionAPI) {
 		},
 
 		renderResult(result, _options, theme) {
-			const details = result.details as any;
-			if (!details) {
+			const details = ((result as any).details || result) as any;
+			if (!details || (details.totalFiles === undefined && !details.content)) {
 				const text = result.content[0];
 				return new Text(text?.type === "text" ? text.text : "", 0, 0);
 			}
 
-			const fileCount = details.totalFiles || 0;
+			const fileCount = details.totalFiles ?? 0;
+			const totalAdditions = details.totalAdditions ?? 0;
+			const totalDeletions = details.totalDeletions ?? 0;
 			const rolledBack = (details.rolledBackFiles || []).length;
 
-			let info = `${fileCount} files · +${details.totalAdditions} -${details.totalDeletions}`;
+			let info = `${fileCount} files · +${totalAdditions} -${totalDeletions}`;
 			if (rolledBack > 0) {
 				info += ` · ${rolledBack} rolled back`;
 				return new Text(

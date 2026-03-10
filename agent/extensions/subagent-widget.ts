@@ -84,7 +84,6 @@ interface SubState {
 	sessionFile: string;   // persistent JSONL session path — used by /subcont to resume
 	turnCount: number;     // increments each time /subcont continues this agent
 	summary?: string;      // pre-written summary shown in widget (no markdown)
-	summaryLines?: string[]; // up to 2 recent CLI/output lines for richer widget preview
 	proc?: any;            // active ChildProcess ref (for kill on /subrm)
 	commanderTaskId?: number;  // pre-assigned Commander task ID
 	autoRemove?: boolean;      // auto-remove widget ~30s after done (default: true)
@@ -175,9 +174,6 @@ export default function (pi: ExtensionAPI) {
 				const delta = event.assistantMessageEvent;
 				if (delta?.type === "text_delta") {
 					state.textChunks.push(delta.delta || "");
-					const full = state.textChunks.join("");
-					state.summary = full.split("\n").map((l) => l.trim()).filter(Boolean).pop() || state.summary;
-					state.summaryLines = full.split("\n").map((l) => l.trim()).filter(Boolean).slice(-3);
 					invalidateWidget(state.id);
 				}
 			} else if (type === "tool_execution_start") {

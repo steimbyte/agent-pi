@@ -10,7 +10,6 @@ export interface SubRenderState {
 	elapsed: number;
 	turnCount: number;
 	summary?: string;
-	summaryLines?: string[];
 	model?: string;
 }
 
@@ -39,48 +38,42 @@ export function subagentTitle(state: SubRenderState): string {
  * Text uses bold white for title and light colors for details.
  * borderCount is always 1 (top divider only).
  */
-function truncate(text: string, max: number): string {
-	return text.length > max ? text.slice(0, Math.max(0, max - 3)) + "..." : text;
-}
-
-function displayCliName(name: string): string {
-	const lower = name.toLowerCase();
-	return lower.endsWith("-agent") ? lower.slice(0, -6) : lower;
-}
-
 export function renderSubagentWidget(
 	state: SubRenderState,
 	width: number,
 	theme: SubRenderTheme,
 ): SubRenderResult {
 	const lines: string[] = [];
-	const title = subagentTitle(state);
-	const innerWidth = Math.max(24, width - 4);
 
+	const title = subagentTitle(state);
+
+	// Animated spinner for running state
 	const spinner = state.status === "running"
 		? BRAILLE_FRAMES[Math.floor(Date.now() / 80) % BRAILLE_FRAMES.length] + " "
 		: state.status === "done" ? "✓ "
 		: "✗ ";
 
-	const cliName = displayCliName(state.name);
-	const runnerLabel = theme.fg("dim", "agent runner");
-	const separator = theme.fg("muted", " | ");
-	const header = `${theme.bold(truncate(cliName, Math.max(8, Math.floor(innerWidth * 0.45))))}${separator}${runnerLabel}`;
-	const rule = theme.fg("dim", "-".repeat(Math.max(8, Math.min(innerWidth, 60))));
+	const turnLabel = state.turnCount > 1
+		? ` · Turn ${state.turnCount}`
+		: "";
 
-	lines.push(header);
-	lines.push(rule);
+	const modelSuffix = state.model ? ` | ${state.model}` : "";
 
-	const detailLines = (state.summaryLines && state.summaryLines.length > 0)
-		? state.summaryLines.slice(0, 3)
-		: [state.summary || state.task];
-	const normalized = detailLines.map((line) => truncate(line || "-", innerWidth));
-	while (normalized.length < 3) normalized.push("-");
-	for (const line of normalized.slice(0, 3)) {
-		lines.push(line);
-	}
+	// Line 1: spinner + title + stats + model (summary shown on line 2)
+	lines.push(
+		theme.bold(spinner + title) +
+		turnLabel +
+		` | (${Math.round(state.elapsed / 1000)}s)` +
+		` | Tools: ${state.toolCount}` +
+		modelSuffix
+	);
 
-	lines.push(rule);
+	// Line 2: summary (current activity) or task preview as fallback
+	const detail = state.summary || state.task;
+	const detailPreview = detail.length > 40
+		? detail.slice(0, 37) + "..."
+		: detail;
+	lines.push(`  ${detailPreview}`);
 
 	return { lines, borderCount: 1 };
 }

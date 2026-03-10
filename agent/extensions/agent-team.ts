@@ -742,19 +742,33 @@ export default function (pi: ExtensionAPI) {
 				return new Text(text?.type === "text" ? text.text : "", 0, 0);
 			}
 
-			const agent = (details.agent || "?").toLowerCase();
+			const agent = (details.agent || "AGENT").toUpperCase();
 			const model = details.model || "";
-			const elapsed = typeof details.elapsed === "number" ? Math.round(details.elapsed / 1000) : 0;
-			const status = details.status || "done";
+			const elapsed = typeof details.elapsed === "number" ? details.elapsed : 0;
+			const rawStatus = details.status || "done";
+			const status: "running" | "done" | "error" = rawStatus === "dispatching"
+				? "running"
+				: rawStatus === "error"
+					? "error"
+					: "done";
 
-			// Single line: dim "dispatching:" + bright white agent | model + dim elapsed
-			const DIM = "\x1b[90m";
-			const BRIGHT = "\x1b[1;97m";
-			const RST = "\x1b[0m";
-			const RED = "\x1b[91m";
+			const renderState = {
+				id: 0,
+				status,
+				name: agent,
+				task: details.task || "",
+				toolCount: 0,
+				elapsed,
+				turnCount: 1,
+				summary: `dispatching: ${agent.toLowerCase()}${model ? ` @ ${model}` : ""}`,
+				model: model || undefined,
+			};
 
-			const statusPrefix = status === "error" ? `${RED}✗${RST} ` : "";
-			const line = `${statusPrefix}${DIM}dispatching:${RST} ${BRIGHT}${agent}${RST}${model ? ` ${DIM}|${RST} ${BRIGHT}${model}${RST}` : ""} ${DIM}${elapsed}s${RST}`;
+			const rendered = renderSubagentWidget(renderState, options.width || 80, theme);
+			const bg = STATUS_BG[status] || STATUS_BG.running;
+			const bgFn = (text: string): string => `${bg}${WHITE_BOLD}${text}${RESET_ALL}${RESET_BG}`;
+			const box = new Box(1, 1, bgFn);
+			box.addChild(new Text(rendered.lines.join("\n"), 0, 0));
 
 			if (options.expanded && details.fullOutput) {
 				const output = details.fullOutput.length > 4000
@@ -762,12 +776,12 @@ export default function (pi: ExtensionAPI) {
 					: details.fullOutput;
 				const mdTheme = getPiMdTheme();
 				const container = new Container();
-				container.addChild(new Text(line, 0, 0));
+				container.addChild(box);
 				container.addChild(new Markdown(output, 2, 0, mdTheme));
 				return container;
 			}
 
-			return new Text(line, 0, 0);
+			return box;
 		},
 	});
 
