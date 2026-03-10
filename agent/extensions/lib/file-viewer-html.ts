@@ -471,25 +471,33 @@ export function generateFileViewerHTML(opts: {
   }
 
   /* ── Highlight code ── */
-  function highlightCode() {
-    /* First highlight the raw content */
-    codeBlock.textContent = currentContent;
-    if (typeof hljs !== 'undefined') {
-      if (detectedLang && hljs.getLanguage(detectedLang)) {
-        codeBlock.className = 'language-' + detectedLang;
-      } else {
-        codeBlock.className = '';
-      }
-      hljs.highlightElement(codeBlock);
-    }
-    /* Now wrap each line in a span.code-line for CSS line numbering */
+  function wrapLines() {
+    /* Wrap each line in a span.code-line for CSS line numbering */
     var html = codeBlock.innerHTML;
     var lines = html.split('\\n');
-    /* Remove trailing empty line from final newline */
     if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
     codeBlock.innerHTML = lines.map(function(line) {
       return '<span class="code-line">' + (line || ' ') + '<\\/span>';
     }).join('\\n');
+  }
+
+  function highlightCode() {
+    if (typeof hljs !== 'undefined') {
+      var lang = (detectedLang && hljs.getLanguage(detectedLang)) ? detectedLang : null;
+      var result;
+      if (lang) {
+        result = hljs.highlight(currentContent, { language: lang });
+        codeBlock.innerHTML = result.value;
+        codeBlock.className = 'language-' + lang + ' hljs';
+      } else {
+        result = hljs.highlightAuto(currentContent);
+        codeBlock.innerHTML = result.value;
+        codeBlock.className = 'hljs';
+      }
+    } else {
+      codeBlock.textContent = currentContent;
+    }
+    wrapLines();
   }
 
   /* ── Sync editor line numbers on scroll ── */
