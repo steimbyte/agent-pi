@@ -184,63 +184,49 @@ export function generateFileViewerHTML(opts: {
     flex: 1;
     min-height: 0;
     overflow: auto;
+    display: flex;
   }
   .viewer-wrap.hidden { display: none; }
 
-  .viewer-wrap pre {
+  /* Line number gutter — separate element, not touching hljs markup */
+  .gutter {
+    flex-shrink: 0;
+    width: var(--line-num-width);
+    padding: 16px 0;
+    background: var(--surface2);
+    border-right: 1px solid var(--border);
+    text-align: right;
+    user-select: none;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-dim);
+  }
+  .gutter span {
+    display: block;
+    padding: 0 10px 0 0;
+  }
+
+  .viewer-code {
+    flex: 1;
+    min-width: 0;
+  }
+  .viewer-code pre {
     margin: 0;
-    padding: 0;
+    padding: 16px;
     background: transparent !important;
     font-family: var(--mono);
     font-size: 13px;
     line-height: 1.6;
     tab-size: 2;
-    counter-reset: line;
   }
-  .viewer-wrap code {
+  .viewer-code code {
     font-family: var(--mono);
     font-size: 13px;
     background: transparent !important;
-    display: block;
-    padding: 16px 16px 16px calc(var(--line-num-width) + 16px);
   }
   /* Override hljs background to match our theme */
   .hljs { background: transparent !important; }
-
-  /* Line numbers via CSS — each line is a table row with ::before counter */
-  .viewer-wrap .code-line {
-    display: block;
-    position: relative;
-  }
-  .viewer-wrap .code-line::before {
-    counter-increment: line;
-    content: counter(line);
-    position: absolute;
-    left: calc(-1 * var(--line-num-width) - 16px);
-    width: var(--line-num-width);
-    padding-right: 10px;
-    text-align: right;
-    color: var(--text-dim);
-    user-select: none;
-    background: var(--surface2);
-    display: inline-block;
-    box-sizing: border-box;
-  }
-  /* Left gutter background */
-  .viewer-wrap pre::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    width: var(--line-num-width);
-    background: var(--surface2);
-    border-right: 1px solid var(--border);
-    z-index: 0;
-  }
-  .viewer-wrap pre {
-    position: relative;
-  }
 
   /* ── Editor (enhanced textarea) ── */
   .editor-wrap {
@@ -348,7 +334,10 @@ export function generateFileViewerHTML(opts: {
     <div id="notice" class="notice"></div>
 
     <div id="viewerWrap" class="viewer-wrap">
-      <pre><code id="codeBlock"></code></pre>
+      <div id="gutter" class="gutter"></div>
+      <div class="viewer-code">
+        <pre><code id="codeBlock"></code></pre>
+      </div>
     </div>
 
     <div id="editorWrap" class="editor-wrap">
@@ -394,6 +383,7 @@ export function generateFileViewerHTML(opts: {
   var doneBanner = document.getElementById('doneBanner');
   var viewerWrap = document.getElementById('viewerWrap');
 
+  var gutter = document.getElementById('gutter');
   var codeBlock = document.getElementById('codeBlock');
   var editorWrap = document.getElementById('editorWrap');
   var editorLines = document.getElementById('editorLines');
@@ -471,33 +461,34 @@ export function generateFileViewerHTML(opts: {
   }
 
   /* ── Highlight code ── */
-  function wrapLines() {
-    /* Wrap each line in a span.code-line for CSS line numbering */
-    var html = codeBlock.innerHTML;
-    var lines = html.split('\\n');
-    if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
-    codeBlock.innerHTML = lines.map(function(line) {
-      return '<span class="code-line">' + (line || ' ') + '<\\/span>';
-    }).join('\\n');
+  function updateGutter(content) {
+    var lines = content.split('\\n');
+    var count = lines.length;
+    if (count > 1 && lines[count - 1] === '') count--;
+    var html = '';
+    for (var i = 1; i <= count; i++) {
+      html += '<span>' + i + '<\\/span>';
+    }
+    gutter.innerHTML = html;
   }
 
   function highlightCode() {
+    /* Highlight with hljs — use .highlight() for synchronous result */
     if (typeof hljs !== 'undefined') {
       var lang = (detectedLang && hljs.getLanguage(detectedLang)) ? detectedLang : null;
       var result;
       if (lang) {
         result = hljs.highlight(currentContent, { language: lang });
-        codeBlock.innerHTML = result.value;
-        codeBlock.className = 'language-' + lang + ' hljs';
       } else {
         result = hljs.highlightAuto(currentContent);
-        codeBlock.innerHTML = result.value;
-        codeBlock.className = 'hljs';
       }
+      codeBlock.innerHTML = result.value;
+      codeBlock.className = (lang ? 'language-' + lang + ' ' : '') + 'hljs';
     } else {
       codeBlock.textContent = currentContent;
     }
-    wrapLines();
+    /* Update line number gutter — completely separate from code markup */
+    updateGutter(currentContent);
   }
 
   /* ── Sync editor line numbers on scroll ── */
