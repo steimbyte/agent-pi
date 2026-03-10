@@ -184,13 +184,22 @@ export function generateFileViewerHTML(opts: {
     flex: 1;
     min-height: 0;
     overflow: auto;
-    display: flex;
   }
   .viewer-wrap.hidden { display: none; }
 
-  /* Line number gutter — separate element, not touching hljs markup */
+  .viewer-table {
+    display: table;
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .viewer-row {
+    display: table-row;
+  }
+
+  /* Line number gutter — table cell, always aligned with code */
   .gutter {
-    flex-shrink: 0;
+    display: table-cell;
+    vertical-align: top;
     width: var(--line-num-width);
     padding: 16px 0;
     background: var(--surface2);
@@ -208,8 +217,8 @@ export function generateFileViewerHTML(opts: {
   }
 
   .viewer-code {
-    flex: 1;
-    min-width: 0;
+    display: table-cell;
+    vertical-align: top;
   }
   .viewer-code pre {
     margin: 0;
@@ -334,9 +343,13 @@ export function generateFileViewerHTML(opts: {
     <div id="notice" class="notice"></div>
 
     <div id="viewerWrap" class="viewer-wrap">
-      <div id="gutter" class="gutter"></div>
-      <div class="viewer-code">
-        <pre><code id="codeBlock"></code></pre>
+      <div class="viewer-table">
+        <div class="viewer-row">
+          <div id="gutter" class="gutter"></div>
+          <div class="viewer-code">
+            <pre><code id="codeBlock"></code></pre>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -663,12 +676,13 @@ export function generateFileViewerHTML(opts: {
     }
   });
 
-  /* ── Init — wait for all scripts (hljs CDN) to load ── */
-  if (document.readyState === 'complete') {
+  /* ── Init ── */
+  refreshUI();
+  /* Retry after CDN scripts load in case hljs wasn't ready on first call */
+  window.addEventListener('load', function() {
+    lastHighlightedContent = null;
     refreshUI();
-  } else {
-    window.addEventListener('load', function() { refreshUI(); });
-  }
+  });
 <\/script>
 </body>
 </html>`;
