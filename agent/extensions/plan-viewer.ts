@@ -221,6 +221,7 @@ export default function (pi: ExtensionAPI) {
 		filePath: string,
 		title: string,
 		purpose: ViewerPurpose,
+		signal?: AbortSignal,
 	): Promise<ViewerResult> {
 		// Clean up any previous server
 		cleanupServer();
@@ -246,9 +247,18 @@ export default function (pi: ExtensionAPI) {
 		openBrowser(url);
 		notifyViewerOpen(ctx, activeSession);
 
-		// Wait for user action in the browser
+		// Wait for user action in the browser (or abort)
 		try {
-			const result = await waitForResult();
+			const abortPromise = signal
+				? new Promise<ViewerResult>((_, reject) => {
+					if (signal.aborted) reject(new Error("Aborted"));
+					signal.addEventListener("abort", () => reject(new Error("Aborted")), { once: true });
+				})
+				: null;
+
+			const result = await (abortPromise
+				? Promise.race([waitForResult(), abortPromise])
+				: waitForResult());
 
 			// Auto-save the modified markdown back to the source file
 			if (result.modified && result.markdown) {
@@ -301,7 +311,7 @@ export default function (pi: ExtensionAPI) {
 			"The markdown file IS the UI — update it to change what the user sees.",
 		parameters: ShowPlanParams,
 
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const { file_path, title, mode: modeStr } = params as {
 				file_path: string;
 				title?: string;
@@ -323,7 +333,7 @@ export default function (pi: ExtensionAPI) {
 			const displayTitle = title || basename(file_path, ".md");
 
 			// Open viewer and wait for result
-			const result = await runViewer(ctx, markdown, file_path, displayTitle, purpose);
+			const result = await runViewer(ctx, markdown, file_path, displayTitle, purpose, signal);
 
 			// ── Questions mode result ────────────────────────────────
 			if (purpose === "questions") {

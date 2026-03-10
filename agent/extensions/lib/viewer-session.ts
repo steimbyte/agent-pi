@@ -46,7 +46,5 @@ export function closeActiveViewer(): { closed: boolean; kind?: ActiveViewerKind;
 }
 
 export function notifyViewerOpen(ctx: ExtensionContext, session: ActiveViewerSession): void {
-	const hint = `Run /close-viewer to close this ${session.kind} viewer from the CLI if the browser gets stuck.`;
 	if (ctx.hasUI) ctx.ui.notify(`${session.title} opened at ${session.url}`, "info");
-	ctx.ui.addMessage("assistant", `${session.title} opened at ${session.url}\n${hint}`);
 }

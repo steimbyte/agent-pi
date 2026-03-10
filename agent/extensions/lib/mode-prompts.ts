@@ -5,8 +5,6 @@
 export function buildCommanderSection(): string {
 	return `\n## Commander Integration (REQUIRED)
 Commander is connected. ALWAYS use these tools for dashboard visibility:
-- \`commander_session { operation: "file:open", file_path: <path> }\` — display key files in Commander's floating viewer
-- \`show_file { file_path: <path>, editable?: boolean }\` — open a lightweight local web-based file viewer/editor directly from Pi
 - \`commander_task\` — track tasks in the Commander dashboard (auto-synced from local tasks)
 - \`commander_mailbox\` — ALWAYS send status updates at task start and completion
 
@@ -150,7 +148,6 @@ export const PLAN_PROMPT = `You are in PLAN mode. Follow a plan-first workflow f
 - For plans with 4+ steps, ALWAYS present a completion report at the end
 
 ## Commander Integration (ALWAYS use when connected)
-- ALWAYS display your plan: \`commander_session { operation: "file:open", file_path: ".context/todo.md" }\`
 - ALWAYS track tasks: \`commander_task\` for cross-session tracking
 - ALWAYS broadcast status: \`commander_mailbox\` at plan start, approval, and completion
 `;
@@ -197,6 +194,5 @@ Optionally use /microtasks to break spec into executable tasks.
 ## Commander Integration (ALWAYS use when connected)
 - ALWAYS use commander_spec: create/shape/write operations for tracking
 - ALWAYS use commander_workflow template:get contextos: get structured templates
-- ALWAYS use commander_session file:open: display spec files in Commander UI
 - ALWAYS use commander_mailbox: send status at spec creation, shaping, and approval
 `;
