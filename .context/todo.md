@@ -1,23 +1,19 @@
-# Replace Editor Button Text With Icons
+# Toolkit Agent Refactor Plan
 
 ## Goal
-Swap the `Cursor`, `Windsurf`, and `VS Code` text labels in the file viewer toolbar for clean inline SVG icons.
+Make toolkit agents represent installed CLI software/integrations rather than fixed model personas. Use a lightweight main worker agent for execution, with the real differentiation coming from the CLI tool each toolkit agent invokes.
 
-## Approach
-- Use **inline monochrome SVGs** embedded directly in the HTML template
-- Keep buttons accessible with `title` and `aria-label`
-- Keep buttons the same size and clickable area as today
-- Preserve existing launch behavior exactly
+## Proposed Approach
+- [x] Inspect and preserve the existing standard agent configuration separately from toolkit-specific agents.
+- [x] Identify where toolkit agents are currently mapped directly to model/provider pairs.
+- [x] Refactor toolkit agent definitions so they describe a CLI-backed integration identity and execution method instead of a model-specific identity.
+- [x] Introduce or reuse a shared lightweight worker model for toolkit agent execution, so toolkit agents delegate work through CLI tools rather than through bespoke model assignments.
+- [x] Update any model resolution / dispatch code paths so toolkit agents route through the CLI worker flow.
+- [x] Adjust related config, sync logic, or tests/docs that assume toolkit agents are model-specific.
+- [x] Verify at least one toolkit agent resolves and runs through the new CLI-backed path.
+- [ ] The default model is claude-haiku-4-5
 
-## Plan
-- [ ] Add small inline SVG icon markup for Cursor, Windsurf, and VS Code buttons
-- [ ] Keep tooltips / aria-labels so the buttons remain understandable
-- [ ] Add compact icon-button styling (centered, same toolbar alignment)
-- [ ] Keep fallback text hidden visually only if needed
-- [ ] Test that buttons still launch editors correctly
-
-## Notes
-- No external icon assets
-- No emoji
-- No dependency changes
-- Prefer crisp monochrome icons that fit the current dark UI
+## Expected Outcome
+- Toolkit agents behave like wrappers for installed software or CLI integrations.
+- A main worker agent handles the actual command-line execution.
+- Model configuration becomes an implementation detail of the worker, not the identity of the toolkit agent.

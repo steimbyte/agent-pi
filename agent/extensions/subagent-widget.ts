@@ -30,6 +30,7 @@ import { buildCommanderPrompt } from "./lib/commander-prompt.ts";
 import { preClaimTask, postCompleteTask, postFailTask } from "./lib/commander-lifecycle.ts";
 import { parseGroupCreateResult, buildGroupCreatePayload } from "./lib/commander-sync.ts";
 import { scanAgentDefs, resolveAgentByName, loadAgentModelsConfig, resolveAgentModelString, type AgentDef, type AgentModelsConfig } from "./lib/agent-defs.ts";
+import { resolveToolkitWorkerModel } from "./lib/toolkit-cli.ts";
 
 // ── Commander availability ───────────────────────────────────────────────────
 
@@ -195,7 +196,10 @@ export default function (pi: ExtensionAPI) {
 		// 4) models.json default entry
 		const agentDef = resolveAgentByName(state.name, knownAgents);
 		const configModel = modelsConfig ? resolveAgentModelString(state.name, modelsConfig) : undefined;
-		const model = state.model || agentDef?.model || configModel || DEFAULT_SUBAGENT_MODEL;
+		const model = resolveToolkitWorkerModel(
+			state.name,
+			state.model || agentDef?.model || configModel || DEFAULT_SUBAGENT_MODEL,
+		);
 		state.model = model;
 
 		const extDir = path.dirname(fileURLToPath(import.meta.url));

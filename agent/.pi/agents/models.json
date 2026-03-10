@@ -17,48 +17,48 @@
       "model": "claude-opus-4-6"
     },
     "planner": {
-      "provider": "github-copilot",
-      "model": "gemini-3.1-pro-preview"
+      "provider": "openai-codex",
+      "model": "gpt-5.4"
     },
     "tester": {
       "provider": "anthropic",
       "model": "claude-haiku-4-5"
     },
     "red-team": {
-      "provider": "anthropic",
-      "model": "claude-haiku-4-5"
+      "provider": "openai-codex",
+      "model": "gpt-5.4"
     },
     "gemini-agent": {
-      "provider": "openrouter",
-      "model": "google/gemini-2.5-flash"
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5-20251001"
     },
     "cursor-agent": {
       "provider": "anthropic",
-      "model": "claude-sonnet-4-6"
+      "model": "claude-haiku-4-5-20251001"
     },
     "codex-agent": {
       "provider": "anthropic",
-      "model": "claude-sonnet-4-6"
+      "model": "claude-haiku-4-5-20251001"
     },
     "qwen-agent": {
-      "provider": "openrouter",
-      "model": "qwen/qwen3-coder-plus"
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5-20251001"
     },
     "opencode-agent": {
-      "provider": "openrouter",
-      "model": "google/gemini-2.5-flash"
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5-20251001"
     },
     "groq-agent": {
-      "provider": "openrouter",
-      "model": "meta-llama/llama-4-maverick"
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5-20251001"
     },
     "crush-agent": {
       "provider": "anthropic",
-      "model": "claude-haiku-4-5"
+      "model": "claude-haiku-4-5-20251001"
     },
     "droid-agent": {
       "provider": "anthropic",
-      "model": "claude-sonnet-4-6"
+      "model": "claude-haiku-4-5-20251001"
     },
     "rlm-subcall": {
       "provider": "anthropic",

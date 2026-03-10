@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "child_process";
 import { applyExtensionDefaults } from "./lib/themeMap.ts";
 import { DEFAULT_SUBAGENT_MODEL } from "./lib/defaults.ts";
+import { TOOLKIT_WORKER_MODEL } from "./lib/toolkit-cli.ts";
 
 // ── Types ────────────────────────────────────────
 
@@ -208,9 +209,7 @@ export default function (pi: ExtensionAPI) {
 
 					if (cmd.context === "fork") {
 						const tools = mapTools(cmd.allowedTools).join(",");
-						const model = _ctx.model
-							? `${_ctx.model.provider}/${_ctx.model.id}`
-							: DEFAULT_SUBAGENT_MODEL;
+						const model = TOOLKIT_WORKER_MODEL || DEFAULT_SUBAGENT_MODEL;
 
 						const tasksExtPath = join(dirname(fileURLToPath(import.meta.url)), "tasks.ts");
 						const proc = spawn("pi", [

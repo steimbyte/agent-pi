@@ -3,12 +3,13 @@
 
 import { readdirSync, readFileSync, existsSync } from "fs";
 import { join, resolve } from "path";
+import { isToolkitCliAgent, TOOLKIT_WORKER_MODEL } from "./toolkit-cli.ts";
 
 export interface AgentDef {
 	name: string;
 	description: string;
 	tools: string;
-	model: string; // full "provider/model" string, empty = use default
+	model: string; // resolved execution model, may be overridden for toolkit CLI agents
 	systemPrompt: string;
 	file: string;
 }
@@ -77,6 +78,7 @@ export function resolveAgentModelString(
 	agentName: string,
 	config: AgentModelsConfig,
 ): string {
+	if (isToolkitCliAgent(agentName)) return TOOLKIT_WORKER_MODEL;
 	const key = agentName.toLowerCase();
 	const entry = config.agents[key];
 	if (entry) return buildModelString(entry);
@@ -105,9 +107,11 @@ export function parseAgentFile(filePath: string, modelsConfig?: AgentModelsConfi
 
 		if (!frontmatter.name) return null;
 
-		// Model resolution: models.json > frontmatter fallback > empty
+		// Model resolution: toolkit CLI worker override > models.json > frontmatter fallback > empty
 		let model = "";
-		if (modelsConfig) {
+		if (isToolkitCliAgent(frontmatter.name)) {
+			model = TOOLKIT_WORKER_MODEL;
+		} else if (modelsConfig) {
 			const key = frontmatter.name.toLowerCase();
 			const entry = modelsConfig.agents[key];
 			if (entry) {
