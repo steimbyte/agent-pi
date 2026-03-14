@@ -22,12 +22,8 @@ describe("PLAN_PROMPT", () => {
 		expect(PLAN_PROMPT.toLowerCase()).toContain("implement");
 	});
 
-	it("contains 'commander_session'", () => {
-		expect(PLAN_PROMPT).toContain("commander_session");
-	});
-
-	it("contains 'file:open'", () => {
-		expect(PLAN_PROMPT).toContain("file:open");
+	it("contains 'commander_task'", () => {
+		expect(PLAN_PROMPT).toContain("commander_task");
 	});
 
 	it("contains '.context/todo.md'", () => {
@@ -61,19 +57,11 @@ describe("SPEC_PROMPT", () => {
 		expect(SPEC_PROMPT.toLowerCase()).toContain("spec");
 	});
 
-	it("contains 'AskUserQuestion'", () => {
-		expect(SPEC_PROMPT).toContain("AskUserQuestion");
-	});
-
 	it("contains 'requirements.md'", () => {
 		expect(SPEC_PROMPT).toContain("requirements.md");
 	});
 
-	it("contains 'commander_session'", () => {
-		expect(SPEC_PROMPT).toContain("commander_session");
-	});
-
-	it("contains 'file:open'", () => {
-		expect(SPEC_PROMPT).toContain("file:open");
+	it("contains 'commander_mailbox'", () => {
+		expect(SPEC_PROMPT).toContain("commander_mailbox");
 	});
 });

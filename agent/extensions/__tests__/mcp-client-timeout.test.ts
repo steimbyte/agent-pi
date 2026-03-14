@@ -15,7 +15,7 @@ function createMockProcess(): ChildProcess & {
 	stderr: EventEmitter;
 } {
 	const proc = new EventEmitter() as any;
-	proc.stdin = { write: vi.fn(), end: vi.fn() };
+	proc.stdin = { write: vi.fn(), end: vi.fn(), on: vi.fn() };
 	proc.stdout = new EventEmitter();
 	(proc.stdout as any).setEncoding = vi.fn();
 	proc.stderr = new EventEmitter();

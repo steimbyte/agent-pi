@@ -23,15 +23,14 @@ describe("buildNormalPrompt", () => {
 		}
 	});
 
-	it("with commanderAvailable: true, contains commander_session and file:open", () => {
+	it("with commanderAvailable: true, contains commander_task", () => {
 		const result = buildNormalPrompt({ commanderAvailable: true, activeChain: null, activePipeline: null });
-		expect(result).toContain("commander_session");
-		expect(result).toContain("file:open");
+		expect(result).toContain("commander_task");
 	});
 
-	it("with commanderAvailable: false, does NOT contain commander_session", () => {
+	it("with commanderAvailable: false, does NOT contain commander_task", () => {
 		const result = buildNormalPrompt({ commanderAvailable: false, activeChain: null, activePipeline: null });
-		expect(result).not.toContain("commander_session");
+		expect(result).not.toContain("commander_task");
 	});
 
 	it("with activeChain set, contains chain name", () => {
@@ -86,12 +85,8 @@ describe("buildCommanderSection", () => {
 		expect(result.length).toBeGreaterThan(0);
 	});
 
-	it("contains commander_session", () => {
-		expect(buildCommanderSection()).toContain("commander_session");
-	});
-
-	it("contains file:open", () => {
-		expect(buildCommanderSection()).toContain("file:open");
+	it("contains commander_task", () => {
+		expect(buildCommanderSection()).toContain("commander_task");
 	});
 
 	it("contains commander_task", () => {
