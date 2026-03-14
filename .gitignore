@@ -31,7 +31,7 @@ agent/pi-crash.log
 agent/extensions/coverage/
 
 # Secrets
-agent/models.json
+# agent/models.json - tracked (Synthetic provider config)
 agent/extensions/web-test-worker/.env
 agent/extensions/web-test-worker/node_modules/
 
