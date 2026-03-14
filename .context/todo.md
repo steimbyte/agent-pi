@@ -1,220 +1,128 @@
-# Plan: Extend Autoresearch — Implementation Chain, Session Persistence & Research Browser
+# Plan: Build Disk Cleanup Web App — Scan & Delete Junk Files with AI Intelligence
 
 ## Context
 
-Autoresearch currently ends at the completion report. The user sees results, diffs, and a summary — then the session is over. This is only half the story. Research findings need to become implemented code, and the whole research lifecycle (goal → research → implementation → final report) needs to be saved and resumable.
+The goal is to create a small, self-contained web application that helps clean up a macOS hard drive by finding and deleting temporary files, compiled artifacts, and archives. The app runs locally as a Node.js + Express server with a vanilla HTML/CSS/JS frontend.
 
-Three big additions are needed:
+The app integrates the **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`) for AI intelligence — following the OAuth token pattern from the [specbook OAuth implementation](/Users/ricardo/Workshop/Github-Work/specbook/docs/oauth-token-implementation.md). The SDK's `query()` function automatically reads `CLAUDE_CODE_OAUTH_TOKEN` from the environment, using the user's Max Plan instead of billable API keys. When a scan completes, users can click "Analyze with AI" to get Claude's assessment of which files are safe to delete and personalized cleanup recommendations.
 
-**1. Research → Implementation Chain:** The completion report currently says "here's what we found." Instead, it should present prioritized next steps as *actionable implementation tasks* — then offer to spawn a TEAM of specialist agents to execute those tasks. The report isn't the end; it's the handoff to implementation.
+**OAuth Pattern (from specbook):**
+- The SDK `query()` function is called with **no API key parameter** — it reads `CLAUDE_CODE_OAUTH_TOKEN` from the environment automatically
+- This uses the Max Plan (no API costs)
+- The `CLAUDE_CODE_OAUTH_TOKEN` is already set in the current environment
 
-**2. Session Persistence:** Each autoresearch session (goal, plan, results log, findings, implementation work) should be saved as a JSON session file under `.context/research-sessions/`. Sessions can be resumed later — pick up where you left off, re-run with different approaches, or extend with more iterations.
+The app will scan user-specified directories (defaulting to `~`) for common junk file categories:
 
-**3. Research Browser:** A new web viewer (following the exact pattern of `reports-viewer.ts` + `reports-viewer-html.ts`) that lets users browse all saved research sessions. Search, filter by status (researching/implementing/complete), open any session to see the full lifecycle. Accessible via `/research` command and `show_research` tool.
+| Category | Patterns | Examples |
+|----------|----------|---------|
+| **Temp Files** | `*.tmp`, `*.temp`, `*.swp`, `*.swo`, `*.bak`, `*.old`, `.DS_Store`, `Thumbs.db`, `*.log` | System/editor temp files, stale logs |
+| **Compiled/Build Artifacts** | `*.o`, `*.obj`, `*.pyc`, `*.pyo`, `*.class`, `__pycache__/`, `*.dSYM/`, `node_modules/`, `dist/`, `build/`, `.next/`, `target/` | Compiler outputs, package caches, build dirs |
+| **Archives** | `*.zip`, `*.tar`, `*.tar.gz`, `*.tgz`, `*.rar`, `*.7z`, `*.bz2`, `*.xz`, `*.gz`, `*.dmg`, `*.iso` | Compressed files, disk images |
 
-The existing infrastructure is solid. The report-index system uses SQLite with JSON fallback. The reports-viewer is a self-contained HTML SPA served via local HTTP. The agent-team system dispatches specialist agents via `dispatch_agent`. We follow all these patterns.
+**Safety is critical** — the app will:
+- Never auto-delete anything; the user must explicitly select and confirm
+- Show a confirmation dialog before any deletion
+- Skip system-protected directories (`/System`, `/Library`, `/usr`, etc.)
+- Only scan directories the user explicitly provides
+- Log all deletions for audit trail
 
-### Key Files
-
-| Existing Pattern | What We Reuse |
-|-----------------|---------------|
-| `agent/extensions/reports-viewer.ts` | HTTP server pattern, browser open, heartbeat |
-| `agent/extensions/lib/report-index.ts` | SQLite + JSON storage pattern (but separate DB) |
-| `agent/extensions/lib/reports-viewer-html.ts` | Full HTML SPA template pattern |
-| `agent/extensions/completion-report.ts` | `show_report` tool registration pattern |
-| `agent/extensions/agent-team.ts` | `dispatch_agent` tool, team spawning |
-| `agent/.pi/commands/autoresearch/autoresearch.md` | Command definition (modify) |
-| `agent/skills/autoresearch/SKILL.md` | Skill definition (modify) |
-
----
-
-## Phase 1: Research Session Data Model & Persistence
-
-**Why:** We need a structured way to save and load research sessions before we can build the chain or browser. This is the foundation everything else depends on.
-
-**New file** → `agent/extensions/lib/research-session.ts`
-- Define `ResearchSession` interface:
-  ```typescript
-  interface ResearchSession {
-    id: string;                    // timestamp-slug
-    status: "understanding" | "planning" | "researching" | "implementing" | "complete" | "paused";
-    goal: string;                  // original goal
-    metric: { name: string; direction: "higher" | "lower"; verifyCommand: string; baseline?: number; final?: number; target?: number };
-    scope: { inScope: string[]; readOnly: string[]; outOfScope: string[] };
-    plan: string;                  // markdown content of the research plan
-    clarifyingQA: Array<{ question: string; answer: string }>;  // Q&A from understand phase
-    iterations: Array<{ iteration: number; commit: string; metric: number; delta: number; status: string; description: string }>;
-    findings: string;              // markdown: research findings/summary
-    nextSteps: Array<{ priority: number; description: string; status: "pending" | "implementing" | "done" | "skipped" }>;
-    implementation: { startedAt?: string; completedAt?: string; teamUsed?: string; tasksCreated?: number; summary?: string };
-    createdAt: string;
-    updatedAt: string;
-    workingDirectory: string;
-    tags: string[];
-  }
-  ```
-- `saveResearchSession(session)` — write to `.context/research-sessions/{id}.json`
-- `loadResearchSession(id)` — read from JSON file
-- `listResearchSessions()` — scan directory, return sorted list
-- `updateResearchSession(id, partial)` — merge update and save
-- SQLite index (same pattern as `report-index.ts`) for searchable metadata
-- `upsertResearchSessionIndex(session)` — persist to SQLite for browser search
-
-**New directory** → `.context/research-sessions/`
-- JSON files, one per session
-- Automatically created on first save
+The app will be created in a new `disk-cleanup/` directory at the project root.
 
 ---
 
-## Phase 2: Update Autoresearch to Save Sessions
+## Phase 1: Backend — Express Server, Scan API & AI Analysis with OAuth
 
-**Why:** The autoresearch command/skill needs to create and update a research session throughout its lifecycle — from understanding through research completion.
+**Why:** The core value is scanning + AI-powered recommendations. We need the server, scan logic, and Agent SDK integration (with OAuth token pattern) together since the AI analysis depends on scan results.
 
-**Modify** → `agent/.pi/commands/autoresearch/autoresearch.md`
-- Add `show_research` to allowed-tools (needed for session save)
-- In Step 1 (Understand): After synthesizing understanding, save initial session with status "understanding" and the Q&A
-- In Step 2 (Plan): After plan approval, update session with plan content and status "planning"  
-- In Step 3 (Setup): Update session status to "researching"
-- In Step 4 (Loop): After each iteration, append to session's iterations array (every ~5 iterations or on keep)
-- At loop end (before show_report): Update session with findings, final metric, and prioritized next steps. Change status to "researching" → ready for implementation handoff
+**New file** → `disk-cleanup/package.json`
+- Type: `"module"` (ESM — required by Agent SDK)
+- Dependencies: `express`, `@anthropic-ai/claude-agent-sdk`
+- Start script: `node server.js`
 
-**Modify** → `agent/skills/autoresearch/SKILL.md`  
-- Mirror all session persistence changes from the command file
-
-**Modify** → `agent/skills/autoresearch/references/autonomous-loop-protocol.md`
-- Add session save calls to the loop protocol (after log phase)
-
----
-
-## Phase 3: Implementation Handoff — Chain Research to Team
-
-**Why:** This is the core new feature. The completion report should present findings as actionable next steps, then offer to spawn a team to implement them.
-
-**Modify** → `agent/.pi/commands/autoresearch/autoresearch.md`
-- Restructure the completion phase (after loop ends) into two sub-phases:
-  
-  **Step 5: Research Report & Implementation Handoff**
-  1. Compile findings: what worked, what didn't, prioritized next steps
-  2. Write findings to `.context/autoresearch-plan.md` (update the plan with results section)
-  3. Save session with status "researching", findings, and next steps array
-  4. Present completion report via `show_report` — but frame it as a handoff:
-     - "Research Complete — Ready for Implementation"
-     - Include "Prioritized Next Steps" section with numbered action items
-     - Include "Recommended Implementation Approach" section
-  5. After report closes, ask user: "Ready to implement these findings? I'll spawn a team."
-     ```
-     ask_user {
-       question: "Research complete. Ready to implement the findings?",
-       mode: "select",
-       options: [
-         { label: "Implement now — spawn a team to execute the findings", markdown: "..." },
-         { label: "Save & pause — resume implementation later", markdown: "..." },
-         { label: "Done — research only, no implementation needed", markdown: "..." }
-       ]
-     }
-     ```
-  
-  **Step 6: Implementation (if user chooses "implement now")**
-  1. Update session status to "implementing"
-  2. Convert next steps into Commander task group
-  3. Dispatch specialist agents (builders) via `dispatch_agent` or `subagent_create_batch` to implement each finding
-  4. Track implementation progress via Commander
-  5. When implementation completes:
-     - Update session with implementation summary, status "complete"
-     - Present a FINAL completion report that includes:
-       - Original research goal
-       - Research results (baseline → final metric)
-       - Implementation work done (files changed, tasks completed)
-       - Any remaining gaps or follow-up items
-     ```
-     show_report {
-       title: "Research & Implementation Complete: <goal>",
-       summary: "## Original Goal\n<goal>\n\n## Research Results\n<findings>\n\n## Implementation\n<what was built>\n\n## Gaps & Follow-up\n<remaining items>"
-     }
-     ```
-
-**Modify** → `agent/skills/autoresearch/SKILL.md`
-- Mirror the same handoff and implementation phases
+**New file** → `disk-cleanup/server.js`
+- Express server on port 3456
+- Serves static files from `public/`
+- **Scan endpoints:**
+  - `POST /api/scan` — accepts `{ directory, categories }`, recursively walks the directory tree, returns grouped results with file paths, sizes, and modified dates
+  - `GET /api/default-dir` — returns the user's home directory
+- **Delete endpoint:**
+  - `POST /api/delete` — accepts `{ files: string[] }`, deletes selected files, returns success/failure per file, logs to `deletion-log.json`
+- **AI Analysis endpoint (OAuth pattern):**
+  - `POST /api/analyze` — accepts scan results summary, calls Agent SDK `query()` with NO API key (reads `CLAUDE_CODE_OAUTH_TOKEN` from env automatically — Max Plan, no cost). Streams Claude's response via SSE to the frontend. The prompt asks Claude to analyze the file list, categorize safety levels, and recommend what to delete.
+  - Options: `{ allowedTools: [] }` (no tools needed — pure text analysis), `systemPrompt` set to disk cleanup expert persona
+- File scanning logic:
+  - Uses `fs.readdir` with `{ recursive: true }` for walking directories
+  - Uses `fs.stat` for file sizes and modification dates
+  - Skips protected system directories (`/System`, `/Library`, `/usr`, `/bin`, `/sbin`, `/private`)
+  - Skips symlinks to prevent loops
+  - Returns human-readable sizes (KB, MB, GB)
+  - Groups results by category (temp, compiled, archives)
+  - Max depth: 10 levels, max files: 10,000
 
 ---
 
-## Phase 4: Research Session Browser — Extension & Web Viewer
+## Phase 2: Frontend — UI for Scanning, AI Analysis, Reviewing & Deleting
 
-**Why:** Users need to browse, search, and resume saved research sessions. Following the exact pattern of the existing reports-viewer.
+**Why:** Users need a clear visual interface to browse results, get AI recommendations, select files, and trigger deletions safely.
 
-**New file** → `agent/extensions/lib/research-viewer-html.ts`
-- Self-contained HTML SPA (same dark theme as reports-viewer-html.ts)
-- Card-based layout showing research sessions:
-  - Status badge (color-coded: researching=blue, implementing=yellow, complete=green, paused=gray)
-  - Goal title
-  - Metric: baseline → current (with delta)
-  - Iteration count (keeps/discards/crashes)
-  - Created date, last updated
-  - Tags
-- Search bar (searches goal, findings, tags)
-- Filter by status dropdown
-- Click a session → detail view showing:
-  - Full goal & clarifying Q&A
-  - Research plan (rendered markdown)
-  - Iteration timeline (table of all iterations)
-  - Findings & next steps
-  - Implementation status
-  - "Resume" button that copies a resume command to clipboard
-- Responsive layout, same CSS variables as reports-viewer
+**New file** → `disk-cleanup/public/index.html`
+- Clean, modern single-page layout with dark theme
+- **Header:** App title + disk space summary
+- **Scan controls:** Directory input (pre-filled via `/api/default-dir`), category checkboxes (all checked by default), "Scan" button
+- **Results area:** Grouped by category with expandable/collapsible sections
+  - Each file: checkbox, name, path, size, last modified
+  - "Select all / Deselect all" per category
+  - Color-coded: orange=temp, blue=compiled, green=archives
+- **AI Analysis panel:** "🤖 Analyze with AI" button
+  - Streams Claude's response in a styled card with markdown-like formatting
+  - Shows safety ratings, recommendations, estimated space savings
+- **Action bar (sticky bottom):** "Delete Selected" button with count + total size
+- **Confirmation modal:** Lists files to be deleted, requires explicit confirm
+- **Progress/status:** Loading spinners during scan, delete, and AI analysis
 
-**New file** → `agent/extensions/research-viewer.ts`
-- Register `show_research` tool:
-  ```typescript
-  {
-    name: "show_research",
-    description: "Open the research sessions browser. Browse, search, and resume saved autoresearch sessions.",
-    parameters: { title?: string, session_id?: string }
-  }
-  ```
-  - If `session_id` provided, open directly to that session's detail view
-  - Otherwise, open the browser listing all sessions
-- Register `/research` command (same as tool but command-line invoked)
-- HTTP server pattern (same as reports-viewer.ts):
-  - `GET /` — serve HTML
-  - `GET /logo.png` — serve agent logo
-  - `POST /heartbeat` — keep alive
-  - `GET /api/sessions` — return all sessions as JSON
-  - `GET /api/sessions/:id` — return single session detail
-  - `POST /result` — close viewer
-- Server lifecycle: cleanup on session_shutdown, single active server
+**New file** → `disk-cleanup/public/style.css`
+- CSS custom properties for dark theme
+- Responsive flexbox/grid layout
+- Category color coding
+- Collapsible sections with smooth transitions
+- Styled checkboxes, buttons, modals
+- AI panel with subtle background, streaming text animation
+- Progress bars and loading states
+- Sticky action bar
+
+**New file** → `disk-cleanup/public/app.js`
+- `fetchDefaultDir()` — pre-fill directory input on load
+- `scanDirectory()` — POST to `/api/scan`, render grouped results
+- `analyzeWithAI()` — POST to `/api/analyze` with SSE streaming, render AI response
+- `deleteSelected()` — POST to `/api/delete` after confirmation modal
+- DOM rendering: category groups, file rows, checkboxes
+- Select/deselect logic with running count + size totals
+- Modal management (show/hide confirmation)
+- Error handling with user-friendly messages
+- Format helpers (file sizes, dates)
 
 ---
 
-## Phase 5: Update Allowed Tools & Integration
+## Phase 3: Polish — Safety, Logging & UX Enhancements
 
-**Why:** The new tools need to be wired into the autoresearch command, and the extension needs to be loadable.
+**Why:** A disk cleanup tool must be safe and user-friendly — this phase adds guardrails and final polish.
 
-**Modify** → `agent/.pi/commands/autoresearch/autoresearch.md`
-- Add `show_research` to allowed-tools
-- Add session persistence calls throughout (as designed in Phase 2)
-- Update the Commander lifecycle table with new phases
+**Modify** → `disk-cleanup/server.js`
+- Add path validation — `fs.realpath` to resolve symlinks, reject paths outside scan root
+- Add deletion audit log: append to `deletion-log.json` with `{ timestamp, path, size, success }`
+- Add `GET /api/history` endpoint to serve deletion log
+- Improve error messages for permission denied, file not found, etc.
 
-**Modify** → `agent/skills/autoresearch/SKILL.md`
-- Mirror allowed-tools update
-- Add session persistence section
+**Modify** → `disk-cleanup/public/app.js`
+- Add deletion history view (fetches `/api/history`, renders in collapsible panel)
+- Add scan statistics display (time taken, files found, dirs scanned)
+- Add keyboard shortcuts (Ctrl+A select all, Escape close modal)
+- Improve error recovery for partial failures
 
-**Modify** → `agent/skills/autoresearch/references/autonomous-loop-protocol.md`
-- Add "Session Save" note to Phase 7 (Log Results)
-- Add implementation handoff section after the completion section
-
----
-
-## Phase 6: Verify & Polish
-
-**Why:** Ensure the full lifecycle works end-to-end and all components integrate correctly.
-
-- Read all modified files for consistency
-- Verify the session JSON schema is complete and covers all phases
-- Confirm the research browser HTML renders correctly with sample data
-- Test that the autoresearch flow: Understand → Plan → Loop → Handoff → Implement → Final Report is coherent in the instructions
-- Verify session persistence survives across separate autoresearch invocations
-- Ensure backward compatibility: existing autoresearch sessions (without save) still work
-- Check that the `/research` command and `show_research` tool are properly registered
+**Modify** → `disk-cleanup/public/index.html`
+- Add deletion history panel (collapsible, shows recent deletions)
+- Add footer with scan statistics
+- Add "Clear results" button
 
 ---
 
@@ -222,32 +130,26 @@ The existing infrastructure is solid. The report-index system uses SQLite with J
 
 | File | Action |
 |------|--------|
-| `agent/extensions/lib/research-session.ts` | New — session data model & persistence |
-| `agent/extensions/lib/research-viewer-html.ts` | New — HTML SPA for research browser |
-| `agent/extensions/research-viewer.ts` | New — extension with show_research tool & /research command |
-| `agent/.pi/commands/autoresearch/autoresearch.md` | Modify — add implementation chain, session saves, new tools |
-| `agent/skills/autoresearch/SKILL.md` | Modify — mirror command changes |
-| `agent/skills/autoresearch/references/autonomous-loop-protocol.md` | Modify — add session save + implementation phases |
-| `agent/extensions/reports-viewer.ts` | Reference — reuse server pattern |
-| `agent/extensions/lib/report-index.ts` | Reference — reuse SQLite pattern |
-| `agent/extensions/lib/reports-viewer-html.ts` | Reference — reuse HTML SPA pattern |
-| `agent/extensions/agent-team.ts` | Reference — dispatch_agent integration |
+| `disk-cleanup/package.json` | New |
+| `disk-cleanup/server.js` | New → Modify (Phase 3 hardening) |
+| `disk-cleanup/public/index.html` | New → Modify (Phase 3 history panel) |
+| `disk-cleanup/public/style.css` | New |
+| `disk-cleanup/public/app.js` | New → Modify (Phase 3 enhancements) |
 
 ## Reusable Components (no changes needed)
 
-- **report-index.ts** — SQLite + JSON persistence pattern. We create a separate `research-session.ts` following the same architecture but with its own DB table and schema.
-- **reports-viewer.ts** — HTTP server lifecycle, browser open, heartbeat pattern. Cloned directly for research-viewer.ts.
-- **reports-viewer-html.ts** — Full HTML SPA template with dark theme, search, cards. Used as the design template for research-viewer-html.ts.
-- **completion-report.ts** — show_report tool pattern. The research viewer follows the same registration approach.
-- **agent-team.ts** — dispatch_agent tool for spawning specialist agents during implementation.
+- **Node.js `fs/promises`** — recursive directory reading, file stats, unlinking
+- **Node.js `path`** — cross-platform path handling
+- **Node.js `os.homedir()`** — default scan directory
+- **`@anthropic-ai/claude-agent-sdk` `query()`** — AI analysis via OAuth token (reads `CLAUDE_CODE_OAUTH_TOKEN` from env, no API key needed)
 
 ## Verification
 
-1. `node -e "require('./agent/extensions/lib/research-session.ts')"` — module loads without errors
-2. Create a test session, save it, list sessions, load it back — data round-trips correctly
-3. Open `/research` browser — sessions display with correct status badges, search works
-4. Click a session — detail view shows all sections (Q&A, plan, iterations, findings)
-5. Run a full autoresearch cycle — session is created and updated at each phase
-6. At completion, "implement now" option spawns agents and tracks implementation
-7. Final report includes both research results AND implementation summary
-8. Paused session can be browsed and resumed from the research viewer
+1. `cd disk-cleanup && npm install && npm start` — server starts on port 3456
+2. Open `http://localhost:3456` — UI loads with directory input defaulting to home dir
+3. Click "Scan" on a small test directory — results appear grouped by category with correct sizes
+4. Click "Analyze with AI" — Claude streams analysis using OAuth token (Max Plan, no cost)
+5. Select some files and click "Delete" — confirmation modal appears, files are removed after confirm
+6. Verify protected directories (`/System`, `/Library`) are skipped during scan
+7. Check `deletion-log.json` records all deletions with timestamps
+8. Check deletion history panel shows recent deletions
