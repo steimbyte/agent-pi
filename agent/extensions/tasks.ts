@@ -316,11 +316,9 @@ export default function (pi: ExtensionAPI) {
 		const pending = tasks.filter((t) => t.status !== "done");
 		const active = tasks.filter((t) => t.status === "inprogress");
 
+		// No tasks yet — nudge but don't block so agents can explore first
 		if (tasks.length === 0) {
-			return {
-				block: true,
-				reason: "No tasks defined. You MUST use `tasks new-list` or `tasks add` to define your tasks before using any other tools. Plan your work first!",
-			};
+			return { block: false };
 		}
 		if (pending.length === 0) {
 			return {
