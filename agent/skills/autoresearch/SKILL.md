@@ -1,7 +1,7 @@
 ---
 name: autoresearch
 description: Autonomous Goal-directed Iteration. Apply Karpathy's autoresearch principles to ANY task. Loops autonomously — modify, verify, keep/discard, repeat. Invoke with /skill:autoresearch or when user says "work autonomously", "iterate until done", "keep improving", or "run overnight".
-allowed-tools: Bash(git:*) Bash(npm:*) Bash(npx:*) Read Write Edit ask_user show_plan commander_task commander_mailbox show_report
+allowed-tools: Bash(git:*) Bash(npm:*) Bash(npx:*) Read Write Edit ask_user show_plan show_research subagent_create_batch dispatch_agent commander_task commander_mailbox show_report
 ---
 
 # Autoresearch — Autonomous Goal-directed Iteration
@@ -46,6 +46,8 @@ Before touching any files, deeply understand the goal. Do NOT rush into iteratio
 4. **Skip if crystal clear** — If the goal is unambiguous (clear metric, scope, exit criteria), skip questions and proceed to Phase 2. State briefly why no questions are needed.
 
 5. **Synthesize understanding** — Form a concrete statement: Goal, Metric (what + direction + verify command), Scope (in/out), Constraints, Exit criteria.
+
+6. **Save research session** — Create `.context/research-sessions/<session-id>.json` with the initial session data: goal, metric, scope, clarifying Q&A, status "understanding". Store the `session_id` for updates throughout the lifecycle.
 
 ## Phase 2: Plan (Present Before Executing)
 
@@ -97,6 +99,8 @@ Now write and present a research plan for user approval. Do NOT start iterating 
    - **Approved** → proceed to Phase 3
    - **Declined** → revise based on feedback and re-present
 
+4. **Update session** — Set status to "planning", save plan content and baseline metric.
+
 ## Phase 3: Setup & Begin
 
 With understanding confirmed and plan approved, set up tracking and start.
@@ -104,7 +108,8 @@ With understanding confirmed and plan approved, set up tracking and start.
 1. **Create results log** — Create `autoresearch-results.tsv` (see `references/results-logging.md`)
 2. **Record baseline** — Log the baseline metric from Phase 2 as iteration #0
 3. **Commander tracking** — If available, create task group and broadcast start (see Commander Integration below)
-4. **Begin the loop** — Start iterating immediately. No further confirmation needed.
+4. **Update session** — Set status to "researching"
+5. **Begin the loop** — Start iterating immediately. No further confirmation needed.
 
 ## The Loop
 
@@ -210,9 +215,9 @@ commander_mailbox {
 }
 ```
 
-### Completion — Report & Final Broadcast (MANDATORY)
+### Research Complete — Report & Implementation Handoff (MANDATORY)
 
-When the loop ends (bounded mode reaching N, or goal achieved), you MUST complete all three steps:
+When the loop ends (bounded mode reaching N, or goal achieved):
 
 1. **Final mailbox broadcast** with full summary:
 ```
@@ -225,15 +230,24 @@ commander_mailbox {
 }
 ```
 
-2. **Visual completion report** — This is MANDATORY. Always call `show_report` with a rich summary that ties results back to the original plan:
+2. **Compile findings & next steps** — Extract prioritized, actionable implementation items from the research. Update the session file with findings, next steps array, and final metric.
+
+3. **Research report** — Present via `show_report` framed as a handoff:
 ```
 show_report {
-  title: "Autoresearch Complete: <goal>",
-  summary: "## Results\n\nBaseline: <X> → Final: <Y> (delta: <Z>)\n\n**Iterations:** N total (A keeps, B discards, C crashes)\n\n**Best iteration:** #M — <description>\n\n## Plan vs. Reality\n\nReference `.context/autoresearch-plan.md` — which planned strategies were tried? Which worked? Any surprises or unexpected findings?\n\n## Kept Changes\n\n<list of kept iterations with descriptions>\n\n## What Didn't Work\n\n<Discarded approaches and why — useful for future research runs>"
+  title: "Research Complete — Ready for Implementation: <goal>",
+  summary: "## Research Results\n\n...\n\n## Prioritized Next Steps\n\n1. <action item>\n2. ...\n\n## Recommended Implementation Approach\n\n<how to implement>"
 }
 ```
 
-3. **Preserve the plan** — Leave `.context/autoresearch-plan.md` intact as a record of what was planned vs. what happened. Do not delete it.
+4. **Ask about implementation** — Use `ask_user` to offer three choices:
+   - **Implement now** → spawn a team of builder agents via `subagent_create_batch`
+   - **Save & pause** → set session to "paused", resume later via `/research`
+   - **Done** → mark session "complete"
+
+5. **Implementation (if chosen)** — Update session to "implementing", create Commander task group, dispatch builders, track completion. When done, present final comprehensive report covering research results AND implementation work. Set session to "complete".
+
+6. **Preserve the plan** — Leave `.context/autoresearch-plan.md` intact. Leave the session file for browsing via `/research`.
 
 ### Graceful Degradation
 
@@ -255,3 +269,12 @@ All Commander calls are **optional**. If Commander is unavailable:
 | Refactoring | Tests pass + LOC reduced | Target module | `npm test && wc -l` |
 
 Adapt the loop to your domain. The PRINCIPLES are universal; the METRICS are domain-specific.
+
+## Session Persistence
+
+Every autoresearch session is saved to `.context/research-sessions/<session-id>.json`. This enables:
+- **Resume later** — pick up where you left off via `/research` command
+- **Browse history** — see all past research sessions in the research browser
+- **Track lifecycle** — from understanding through implementation completion
+
+Update the session file at every major transition: understand → plan → research → implement → complete. On every "keep" iteration or every ~5 iterations, append iteration data to the session. This creates a complete record of the research lifecycle that can be browsed and resumed.

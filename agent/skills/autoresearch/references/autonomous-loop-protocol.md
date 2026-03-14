@@ -120,6 +120,12 @@ commander_task { operation: "comment:add", task_id: <task_id>, body: "Status: <s
 
 Use `complete` for all outcomes — discards and crashes are expected in autoresearch, not failures.
 
+### Session Save
+
+On every "keep" result or every ~5 iterations, update the research session file (`.context/research-sessions/<session-id>.json`):
+- Append to the `iterations` array
+- Update `metric.final` with the current best metric value
+
 ## Phase 8: Repeat
 
 ### Commander: Status Broadcast Every ~5 Iterations
@@ -186,6 +192,18 @@ show_report {
 ```
 
 3. Preserve `.context/autoresearch-plan.md` as a record of the research session. Do not delete it.
+
+### Implementation Handoff
+
+After the completion report, the autoresearch process continues:
+
+1. **Compile findings** — Extract prioritized next steps from the research results
+2. **Update session** — Save findings and next steps to the session file
+3. **Ask user** — Offer to implement now (spawn team), save & pause, or mark done
+4. **If implementing** — Dispatch builder agents via `subagent_create_batch`, track via Commander, present final report when done
+5. **Save session** — Update status to "complete" with implementation summary
+
+See the main SKILL.md or autoresearch.md for full implementation handoff instructions.
 
 ### When Stuck (>5 consecutive discards)
 

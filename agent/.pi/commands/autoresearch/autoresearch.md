@@ -2,7 +2,7 @@
 name: autoresearch
 description: "Autonomous Goal-directed Iteration — Apply Karpathy's autoresearch principles to ANY task. Loops autonomously: modify, verify, keep/discard, repeat."
 argument-hint: "<goal description> [--iterations N]"
-allowed-tools: ["Bash", "Read", "Write", "Edit", "ask_user", "show_plan", "commander_task", "commander_mailbox", "show_report"]
+allowed-tools: ["Bash", "Read", "Write", "Edit", "ask_user", "show_plan", "show_research", "subagent_create_batch", "dispatch_agent", "commander_task", "commander_mailbox", "show_report"]
 ---
 
 # Autoresearch — Autonomous Goal-directed Iteration
@@ -50,6 +50,29 @@ Before you touch a single file, you must deeply understand the goal. Do NOT rush
    - **Scope:** Files in/out of scope
    - **Constraints:** Iteration budget, approaches to avoid, time limits
    - **Exit criteria:** When to stop
+
+6. **Save research session** — Create the session file to track this research lifecycle:
+   ```
+   Write .context/research-sessions/<session-id>.json with:
+   {
+     id: "<timestamp-slug>",
+     status: "understanding",
+     goal: "<synthesized goal>",
+     metric: { name: "<metric>", direction: "<higher|lower>", verifyCommand: "<cmd>" },
+     scope: { inScope: [...], readOnly: [...], outOfScope: [...] },
+     clarifyingQA: [{ question: "...", answer: "..." }, ...],
+     plan: "",
+     iterations: [],
+     findings: "",
+     nextSteps: [],
+     implementation: {},
+     createdAt: "<now>",
+     updatedAt: "<now>",
+     workingDirectory: "<cwd>",
+     tags: []
+   }
+   ```
+   Store the `session_id` — you'll update this file throughout the research lifecycle.
 
 ## Step 2: Plan (Present Before Executing)
 
@@ -102,6 +125,11 @@ Now that you understand the goal, write and present a research plan for user app
    - If **approved** → proceed to Step 3
    - If **declined** → revise based on feedback and re-present
 
+4. **Update session** — After plan approval, update the session file:
+   - Set `status` to `"planning"`
+   - Set `plan` to the full markdown content of the research plan
+   - Set `metric.baseline` to the baseline value established in step 1
+
 ## Step 3: Setup & Begin
 
 With understanding confirmed and plan approved, set up the tracking infrastructure and start.
@@ -120,7 +148,8 @@ With understanding confirmed and plan approved, set up the tracking infrastructu
    ```
    commander_mailbox { operation: "send", from_agent: "autoresearch", to_agent: "commander", body: "Autoresearch started: <goal>. Baseline: <value>. Scope: <files>. Plan approved.", message_type: "status" }
    ```
-4. **Begin the loop** — Start iterating immediately. No further confirmation needed.
+4. **Update session** — Set session `status` to `"researching"`.
+5. **Begin the loop** — Start iterating immediately. No further confirmation needed.
 
 ## Step 4: The Loop
 
@@ -147,7 +176,10 @@ LOOP:
      - SAME/WORSE -> git reset --hard HEAD~1, log "discard"
      - CRASHED -> Try to fix (max 3 attempts), else git reset --hard HEAD~1, log "crash"
   7. LOG: Append result to autoresearch-results.tsv
-  7b. COMPLETE: Complete the Commander task with results:
+  7b. SESSION: On every "keep" or every ~5 iterations, update the session file:
+     - Append to `iterations` array: { iteration, commit, metric, delta, status, description }
+     - Update `metric.final` with the current best metric value
+  7c. COMPLETE: Complete the Commander task with results:
      commander_task { operation: "complete", task_id: <task_id>, result: "<keep|discard|crash>: <description>. Metric: <value> (delta: <delta>)" }
      commander_task { operation: "comment:add", task_id: <task_id>, body: "Status: <status>\nMetric: <value> (delta: <delta>)\nCommit: <hash or '-'>", agent_name: "autoresearch" }
   8. REPEAT: Go to step 1
@@ -190,13 +222,95 @@ LOOP:
   ```
   commander_mailbox { operation: "send", from_agent: "autoresearch", to_agent: "commander", body: "Autoresearch complete (N iterations). Baseline: X → Final: Y (delta: Z). Keeps: A | Discards: B | Crashes: C", message_type: "result" }
   ```
-- DO **always** call `show_report` at the end — this is MANDATORY, not optional:
-  ```
-  show_report {
-    title: "Autoresearch Complete: <goal>",
-    summary: "## Results\n\nBaseline: X → Final: Y (delta: Z)\n\n**Iterations:** N total (A keeps, B discards, C crashes)\n\n**Best:** #M — <description>\n\n## Plan vs. Reality\n\n<Which planned strategies were tried? Which worked? Any surprises?>\n\n## Kept Changes\n\n<list of kept iterations with descriptions>\n\n## What Didn't Work\n\n<Discarded approaches and why — useful for future runs>"
-  }
-  ```
+- DO proceed to **Step 5** (Research Report & Implementation Handoff) when the loop ends
+
+## Step 5: Research Report & Implementation Handoff
+
+When the loop ends (bounded iterations reached, goal achieved, or interrupted):
+
+1. **Compile findings** — Summarize what worked, what didn't, and extract prioritized next steps:
+   - List of actionable implementation items, ranked by impact
+   - Each next step should be a concrete task a developer/agent could execute
+   - Include "Recommended Implementation Approach" — how to best implement the findings
+
+2. **Update session** — Write findings and next steps to the session file:
+   - Set `findings` to the markdown findings summary
+   - Set `nextSteps` array with prioritized action items (each with priority number, description, status "pending")
+   - Update `metric.final` with the final metric value
+   - Keep `status` as `"researching"` (not yet implementing)
+
+3. **Present the research report** — Call `show_report` framed as a handoff to implementation:
+   ```
+   show_report {
+     title: "Research Complete — Ready for Implementation: <goal>",
+     summary: "## Research Results\n\nBaseline: X → Final: Y (delta: Z)\n\n**Iterations:** N total (A keeps, B discards, C crashes)\n\n**Best:** #M — <description>\n\n## Prioritized Next Steps\n\n1. <highest priority action item>\n2. <second priority>\n3. <third priority>\n...\n\n## Plan vs. Reality\n\n<strategies tried, outcomes, surprises>\n\n## Recommended Implementation Approach\n\n<how to implement these findings>"
+   }
+   ```
+
+4. **Ask user about implementation** — After the report closes:
+   ```
+   ask_user {
+     question: "Research complete. What would you like to do next?",
+     mode: "select",
+     options: [
+       { label: "Implement now — spawn a team to execute the findings" },
+       { label: "Save & pause — resume implementation later via /research" },
+       { label: "Done — research only, no implementation needed" }
+     ]
+   }
+   ```
+
+5. **Handle the choice:**
+   - **"Implement now"** → proceed to Step 6
+   - **"Save & pause"** → set session `status` to `"paused"`, print the session ID for later resume
+   - **"Done"** → set session `status` to `"complete"`, done
+
+## Step 6: Implementation (Spawn Team)
+
+If the user chooses to implement:
+
+1. **Update session** — Set `status` to `"implementing"`, set `implementation.startedAt` to now
+
+2. **Create implementation tasks** — Convert the prioritized next steps into a Commander task group:
+   ```
+   commander_task {
+     operation: "group:create",
+     group_name: "Implement: <goal>",
+     initiative_summary: "Implement findings from autoresearch: <goal>",
+     total_waves: 1,
+     working_directory: "<cwd>",
+     tasks: [
+       { description: "<next step 1>", task_prompt: "<detailed implementation instructions>" },
+       { description: "<next step 2>", task_prompt: "<detailed implementation instructions>" },
+       ...
+     ]
+   }
+   ```
+
+3. **Dispatch implementation agents** — Use `subagent_create_batch` to spawn builder agents:
+   ```
+   subagent_create_batch {
+     groupName: "Implement: <goal>",
+     agents: [
+       { name: "builder", task: "<detailed task for next step 1>", summary: "<brief>" },
+       { name: "builder", task: "<detailed task for next step 2>", summary: "<brief>" },
+       ...
+     ]
+   }
+   ```
+   Each agent gets the research context: what was tried, what worked, and specific implementation instructions.
+
+4. **Track progress** — Monitor agent completion via Commander. Update session `nextSteps` status as agents finish.
+
+5. **Final completion report** — When all implementation is done:
+   - Update session: `status` to `"complete"`, `implementation.completedAt` to now, `implementation.summary` with results
+   - Present the FINAL comprehensive report:
+   ```
+   show_report {
+     title: "Research & Implementation Complete: <goal>",
+     summary: "## Original Goal\n\n<goal>\n\n## Research Results\n\nBaseline: X → Final: Y. N iterations (A keeps, B discards).\n\n## Implementation Summary\n\n<what was built, tasks completed>\n\n## Remaining Gaps\n\n<any items not yet addressed>"
+   }
+   ```
 
 ## Domain Adaptation
 
@@ -225,15 +339,20 @@ All Commander integration is **optional** — if Commander is unavailable, skip 
 | When | What | Tool Call |
 |------|------|-----------|
 | Understand (Step 1) | Ask clarifying questions | `ask_user { mode: "questions", ... }` |
+| Understand (Step 1) | Save initial session | `Write .context/research-sessions/<id>.json` |
 | Plan (Step 2) | Present research plan | `show_plan { file_path: ".context/autoresearch-plan.md", ... }` |
-| Setup (Step 3, after baseline) | Create task group | `commander_task { operation: "group:create", ... }` |
-| Setup (Step 3, after baseline) | Announce start | `commander_mailbox { operation: "send", message_type: "status", ... }` |
+| Plan (Step 2) | Update session with plan | `Write (update session file)` |
+| Setup (Step 3) | Create task group | `commander_task { operation: "group:create", ... }` |
+| Setup (Step 3) | Announce start | `commander_mailbox { operation: "send", message_type: "status", ... }` |
 | Each iteration (before modify) | Create + claim task | `commander_task { operation: "create", ... }` then `{ operation: "claim", ... }` |
 | Each iteration (after log) | Complete task | `commander_task { operation: "complete", ... }` |
-| Each iteration (after log) | Add detail comment | `commander_task { operation: "comment:add", ... }` |
+| Each iteration (after log) | Save to session | `Write (append iteration to session)` |
 | Every ~5 iterations | Progress broadcast | `commander_mailbox { operation: "send", message_type: "status", ... }` |
-| Loop end | Final broadcast | `commander_mailbox { operation: "send", message_type: "result", ... }` |
-| Loop end | Completion report | `show_report { title: "...", summary: "..." }` |
+| Research complete (Step 5) | Save findings & next steps | `Write (update session with findings)` |
+| Research complete (Step 5) | Research report | `show_report { title: "Research Complete — ...", ... }` |
+| Research complete (Step 5) | Ask about implementation | `ask_user { mode: "select", ... }` |
+| Implementation (Step 6) | Spawn team | `subagent_create_batch { ... }` |
+| Implementation done (Step 6) | Final report | `show_report { title: "Research & Implementation Complete", ... }` |
 
 ### Task Completion Semantics
 
@@ -242,4 +361,13 @@ All Commander integration is **optional** — if Commander is unavailable, skip 
 - **crash** → `complete` with result noting the crash and recovery
 - **Only use `fail`** if the entire autoresearch loop must abort due to an unrecoverable error
 
-**BEGIN NOW. Start with Step 1: Understand the goal, ask clarifying questions if needed, then present a plan for approval. Only after the plan is approved, set up tracking and start the autonomous loop.**
+## Session Persistence
+
+Every autoresearch session is saved to `.context/research-sessions/<session-id>.json`. This enables:
+- **Resume later** — pick up where you left off via `/research` command
+- **Browse history** — see all past research sessions in the research browser
+- **Track lifecycle** — from understanding through implementation completion
+
+The session file is a JSON document tracking: goal, metric, scope, Q&A, plan, iterations, findings, next steps, and implementation status. Update it at every major lifecycle transition (understand → plan → research → implement → complete).
+
+**BEGIN NOW. Start with Step 1: Understand the goal, ask clarifying questions if needed, then present a plan for approval. After the plan is approved, set up tracking, start the autonomous loop, and when research completes, present findings and offer implementation.**
