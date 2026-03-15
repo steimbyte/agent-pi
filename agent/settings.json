@@ -1,6 +1,6 @@
 {
   "quietStartup": true,
-  "lastChangelogVersion": "0.58.1",
+  "lastChangelogVersion": "0.58.3",
   "theme": "midnight-ocean",
   "transport": "sse",
   "defaultProvider": "anthropic",
@@ -9,6 +9,7 @@
   "hideThinkingBlock": true,
   "steeringMode": "one-at-a-time",
   "packages": [
+    "extensions/oauth-provider.ts",
     "extensions/agent-banner.ts",
     "extensions/mode-cycler.ts",
     "extensions/agent-chain.ts",
