@@ -392,6 +392,21 @@ export function generateResearchViewerHTML(opts: {
   }
   .copy-btn:hover { background: var(--accent-dim); }
 
+  /* ── Inline SVG Icons ────────────────── */
+  .icon-inline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    vertical-align: -2px;
+    flex-shrink: 0;
+  }
+  .icon-inline svg {
+    width: 100%;
+    height: 100%;
+  }
+
   .empty-state {
     text-align: center;
     padding: 60px 20px;
@@ -512,7 +527,7 @@ function renderSessions() {
         '<span class="card-date">' + formatDate(s.updatedAt) + '</span>' +
       '</div>' +
       '<div class="card-metrics">' +
-        (s.metricName ? '<span class="card-metric">' + escapeHtmlJS(s.metricName) + ': ' + (s.baseline != null ? '<span>' + s.baseline + '</span>' : '-') + (s.final != null ? ' → <span>' + s.final + '</span>' : '') + (deltaStr ? ' (<span class="' + deltaClass + '">' + deltaStr + '</span>)' : '') + '</span>' : '') +
+        (s.metricName ? '<span class="card-metric">' + escapeHtmlJS(s.metricName) + ': ' + (s.baseline != null ? '<span>' + s.baseline + '</span>' : '-') + (s.final != null ? ' <span class="icon-inline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></span> <span>' + s.final + '</span>' : '') + (deltaStr ? ' (<span class="' + deltaClass + '">' + deltaStr + '</span>)' : '') + '</span>' : '') +
         '<span class="card-metric">Iterations: <span>' + (s.iterationCount || 0) + '</span> (' + (s.keepCount || 0) + ' keeps, ' + (s.discardCount || 0) + ' discards)</span>' +
         (s.nextStepCount > 0 ? '<span class="card-metric">Next steps: <span>' + s.nextStepsDone + '/' + s.nextStepCount + '</span></span>' : '') +
       '</div>' +
@@ -554,7 +569,7 @@ function renderDetail(s) {
   const discards = (s.iterations || []).filter(i => i.status === 'discard').length;
   const crashes = (s.iterations || []).filter(i => i.status === 'crash').length;
 
-  let html = '<button class="back-btn" onclick="hideDetail()">← Back to sessions</button>';
+  let html = '<button class="back-btn" onclick="hideDetail()"><span class="icon-inline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></span> Back to sessions</button>';
 
   // Header
   html += '<div class="detail-header">' +

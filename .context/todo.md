@@ -1,128 +1,65 @@
-# Plan: Build Disk Cleanup Web App — Scan & Delete Junk Files with AI Intelligence
+# Plan: Add Scout-Based Context Gathering to PLAN Mode
 
 ## Context
 
-The goal is to create a small, self-contained web application that helps clean up a macOS hard drive by finding and deleting temporary files, compiled artifacts, and archives. The app runs locally as a Node.js + Express server with a vanilla HTML/CSS/JS frontend.
+When PLAN mode is activated (via `set_mode` or Shift+Tab), the system injects `PLAN_PROMPT` from `agent/extensions/lib/mode-prompts.ts` as the system prompt. This prompt instructs the main agent to follow a 5-phase workflow: Analyze → Plan → Approve → Implement → Report. During "Phase 1: Analyze," the main agent is told to "explore the codebase to understand existing patterns, dependencies, and architecture" — but it does all of this exploration itself, using its own tool calls (Read, Bash, grep, etc.).
 
-The app integrates the **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`) for AI intelligence — following the OAuth token pattern from the [specbook OAuth implementation](/Users/ricardo/Workshop/Github-Work/specbook/docs/oauth-token-implementation.md). The SDK's `query()` function automatically reads `CLAUDE_CODE_OAUTH_TOKEN` from the environment, using the user's Max Plan instead of billable API keys. When a scan completes, users can click "Analyze with AI" to get Claude's assessment of which files are safe to delete and personalized cleanup recommendations.
+The PIPELINE mode already has a dedicated GATHER phase that spawns multiple scout subagents in parallel to explore different areas of the codebase concurrently. The subagent infrastructure (`subagent_create`, `subagent_create_batch`) is mature and supports named agent definitions — when `name: "scout"` is passed, the scout's model, tools, and system prompt are auto-applied from `agent/.pi/agents/scout.md`.
 
-**OAuth Pattern (from specbook):**
-- The SDK `query()` function is called with **no API key parameter** — it reads `CLAUDE_CODE_OAUTH_TOKEN` from the environment automatically
-- This uses the Max Plan (no API costs)
-- The `CLAUDE_CODE_OAUTH_TOKEN` is already set in the current environment
+The goal is to modify the PLAN mode prompt so that during "Phase 1: Analyze," the main agent spawns multiple scout subagents to gather context in parallel, rather than doing all the exploration itself. The scouts report back their findings, and the main agent synthesizes those findings into the context needed for Phase 2 (writing the plan). For simple tasks where multi-scout exploration isn't warranted, the agent should use its own judgment and may skip scouts entirely or spawn just one.
 
-The app will scan user-specified directories (defaulting to `~`) for common junk file categories:
+# We should spawn 4 sub-agents scouts, unless its a simple task
 
-| Category | Patterns | Examples |
-|----------|----------|---------|
-| **Temp Files** | `*.tmp`, `*.temp`, `*.swp`, `*.swo`, `*.bak`, `*.old`, `.DS_Store`, `Thumbs.db`, `*.log` | System/editor temp files, stale logs |
-| **Compiled/Build Artifacts** | `*.o`, `*.obj`, `*.pyc`, `*.pyo`, `*.class`, `__pycache__/`, `*.dSYM/`, `node_modules/`, `dist/`, `build/`, `.next/`, `target/` | Compiler outputs, package caches, build dirs |
-| **Archives** | `*.zip`, `*.tar`, `*.tar.gz`, `*.tgz`, `*.rar`, `*.7z`, `*.bz2`, `*.xz`, `*.gz`, `*.dmg`, `*.iso` | Compressed files, disk images |
+Key files involved:
+- `agent/extensions/lib/mode-prompts.ts` — contains `PLAN_PROMPT` (the system prompt for PLAN mode)
+- `agent/extensions/__tests__/mode-prompts.test.ts` — tests for `PLAN_PROMPT`
+- `agent/extensions/mode-cycler.ts` — injects the prompt via `before_agent_start`
 
-**Safety is critical** — the app will:
-- Never auto-delete anything; the user must explicitly select and confirm
-- Show a confirmation dialog before any deletion
-- Skip system-protected directories (`/System`, `/Library`, `/usr`, etc.)
-- Only scan directories the user explicitly provides
-- Log all deletions for audit trail
-
-The app will be created in a new `disk-cleanup/` directory at the project root.
+The change is purely a **prompt engineering change** — we modify the `PLAN_PROMPT` string to teach the agent a new behavior pattern. No new tools, no new TypeScript logic. The existing `subagent_create_batch` and `subagent_create` tools are already available to the agent.
 
 ---
 
-## Phase 1: Backend — Express Server, Scan API & AI Analysis with OAuth
+## Phase 1: Modify PLAN_PROMPT — Scout-Based Context Gathering
 
-**Why:** The core value is scanning + AI-powered recommendations. We need the server, scan logic, and Agent SDK integration (with OAuth token pattern) together since the AI analysis depends on scan results.
+**Why:** The PLAN_PROMPT currently tells the agent to gather context itself. We need to replace the "Phase 1: Analyze" instructions with a new pattern that spawns targeted scout subagents for parallel codebase exploration, while preserving the agent's judgment to skip scouts for trivial tasks.
 
-**New file** → `disk-cleanup/package.json`
-- Type: `"module"` (ESM — required by Agent SDK)
-- Dependencies: `express`, `@anthropic-ai/claude-agent-sdk`
-- Start script: `node server.js`
-
-**New file** → `disk-cleanup/server.js`
-- Express server on port 3456
-- Serves static files from `public/`
-- **Scan endpoints:**
-  - `POST /api/scan` — accepts `{ directory, categories }`, recursively walks the directory tree, returns grouped results with file paths, sizes, and modified dates
-  - `GET /api/default-dir` — returns the user's home directory
-- **Delete endpoint:**
-  - `POST /api/delete` — accepts `{ files: string[] }`, deletes selected files, returns success/failure per file, logs to `deletion-log.json`
-- **AI Analysis endpoint (OAuth pattern):**
-  - `POST /api/analyze` — accepts scan results summary, calls Agent SDK `query()` with NO API key (reads `CLAUDE_CODE_OAUTH_TOKEN` from env automatically — Max Plan, no cost). Streams Claude's response via SSE to the frontend. The prompt asks Claude to analyze the file list, categorize safety levels, and recommend what to delete.
-  - Options: `{ allowedTools: [] }` (no tools needed — pure text analysis), `systemPrompt` set to disk cleanup expert persona
-- File scanning logic:
-  - Uses `fs.readdir` with `{ recursive: true }` for walking directories
-  - Uses `fs.stat` for file sizes and modification dates
-  - Skips protected system directories (`/System`, `/Library`, `/usr`, `/bin`, `/sbin`, `/private`)
-  - Skips symlinks to prevent loops
-  - Returns human-readable sizes (KB, MB, GB)
-  - Groups results by category (temp, compiled, archives)
-  - Max depth: 10 levels, max files: 10,000
+**Modify** → `agent/extensions/lib/mode-prompts.ts`
+- Rewrite the "Phase 1: Analyze" section of `PLAN_PROMPT` to instruct the agent to:
+  1. Read the task and classify its scope/complexity
+  2. For non-trivial tasks, identify 2-4 distinct reconnaissance areas (e.g., "map the directory structure," "find all files related to X," "trace the data flow for Y," "check test patterns")
+  3. Spawn scouts via `subagent_create_batch` with `name: "scout"` for each area, giving each scout a focused, targeted task
+  4. Wait for all scouts to report back (they deliver results as follow-up messages)
+  5. Synthesize scout findings into the context needed for planning
+- Add guidance on when NOT to spawn multiple scouts:
+  - Single-file changes → just use one scout or read directly
+  - When the task is already well-scoped → fewer scouts needed
+  - Simple renames, config changes, etc. → skip scouts entirely
+- Add example `subagent_create_batch` call showing the pattern
+- Keep the remaining phases (Plan, Approve, Implement, Report) unchanged
 
 ---
 
-## Phase 2: Frontend — UI for Scanning, AI Analysis, Reviewing & Deleting
+## Phase 2: Update Tests
 
-**Why:** Users need a clear visual interface to browse results, get AI recommendations, select files, and trigger deletions safely.
+**Why:** Tests must validate the new scout-related content in PLAN_PROMPT.
 
-**New file** → `disk-cleanup/public/index.html`
-- Clean, modern single-page layout with dark theme
-- **Header:** App title + disk space summary
-- **Scan controls:** Directory input (pre-filled via `/api/default-dir`), category checkboxes (all checked by default), "Scan" button
-- **Results area:** Grouped by category with expandable/collapsible sections
-  - Each file: checkbox, name, path, size, last modified
-  - "Select all / Deselect all" per category
-  - Color-coded: orange=temp, blue=compiled, green=archives
-- **AI Analysis panel:** "🤖 Analyze with AI" button
-  - Streams Claude's response in a styled card with markdown-like formatting
-  - Shows safety ratings, recommendations, estimated space savings
-- **Action bar (sticky bottom):** "Delete Selected" button with count + total size
-- **Confirmation modal:** Lists files to be deleted, requires explicit confirm
-- **Progress/status:** Loading spinners during scan, delete, and AI analysis
-
-**New file** → `disk-cleanup/public/style.css`
-- CSS custom properties for dark theme
-- Responsive flexbox/grid layout
-- Category color coding
-- Collapsible sections with smooth transitions
-- Styled checkboxes, buttons, modals
-- AI panel with subtle background, streaming text animation
-- Progress bars and loading states
-- Sticky action bar
-
-**New file** → `disk-cleanup/public/app.js`
-- `fetchDefaultDir()` — pre-fill directory input on load
-- `scanDirectory()` — POST to `/api/scan`, render grouped results
-- `analyzeWithAI()` — POST to `/api/analyze` with SSE streaming, render AI response
-- `deleteSelected()` — POST to `/api/delete` after confirmation modal
-- DOM rendering: category groups, file rows, checkboxes
-- Select/deselect logic with running count + size totals
-- Modal management (show/hide confirmation)
-- Error handling with user-friendly messages
-- Format helpers (file sizes, dates)
+**Modify** → `agent/extensions/__tests__/mode-prompts.test.ts`
+- Add tests verifying PLAN_PROMPT contains scout-related keywords:
+  - Contains 'scout' (agent name reference)
+  - Contains 'subagent_create_batch' (the tool to use)
+  - Contains guidance about when NOT to spawn scouts
+  - Contains the concept of "targeted" or "focused" scout tasks
+- Keep existing tests unchanged (they validate other invariants)
 
 ---
 
-## Phase 3: Polish — Safety, Logging & UX Enhancements
+## Phase 3: Verify
 
-**Why:** A disk cleanup tool must be safe and user-friendly — this phase adds guardrails and final polish.
+**Why:** Ensure no regressions and the prompt reads well.
 
-**Modify** → `disk-cleanup/server.js`
-- Add path validation — `fs.realpath` to resolve symlinks, reject paths outside scan root
-- Add deletion audit log: append to `deletion-log.json` with `{ timestamp, path, size, success }`
-- Add `GET /api/history` endpoint to serve deletion log
-- Improve error messages for permission denied, file not found, etc.
-
-**Modify** → `disk-cleanup/public/app.js`
-- Add deletion history view (fetches `/api/history`, renders in collapsible panel)
-- Add scan statistics display (time taken, files found, dirs scanned)
-- Add keyboard shortcuts (Ctrl+A select all, Escape close modal)
-- Improve error recovery for partial failures
-
-**Modify** → `disk-cleanup/public/index.html`
-- Add deletion history panel (collapsible, shows recent deletions)
-- Add footer with scan statistics
-- Add "Clear results" button
+- Run the test suite: `cd agent/extensions && npx vitest run __tests__/mode-prompts.test.ts`
+- Run the full suite: `cd agent/extensions && npx vitest run`
+- Review the final PLAN_PROMPT for readability and correct formatting
 
 ---
 
@@ -130,26 +67,21 @@ The app will be created in a new `disk-cleanup/` directory at the project root.
 
 | File | Action |
 |------|--------|
-| `disk-cleanup/package.json` | New |
-| `disk-cleanup/server.js` | New → Modify (Phase 3 hardening) |
-| `disk-cleanup/public/index.html` | New → Modify (Phase 3 history panel) |
-| `disk-cleanup/public/style.css` | New |
-| `disk-cleanup/public/app.js` | New → Modify (Phase 3 enhancements) |
+| `agent/extensions/lib/mode-prompts.ts` | Modify (rewrite Phase 1 of PLAN_PROMPT) |
+| `agent/extensions/__tests__/mode-prompts.test.ts` | Modify (add scout-related test cases) |
+| `agent/extensions/mode-cycler.ts` | Reference (injects PLAN_PROMPT, no changes) |
+| `agent/extensions/subagent-widget.ts` | Reference (provides subagent_create_batch, no changes) |
+| `agent/.pi/agents/scout.md` | Reference (scout agent definition, no changes) |
 
 ## Reusable Components (no changes needed)
 
-- **Node.js `fs/promises`** — recursive directory reading, file stats, unlinking
-- **Node.js `path`** — cross-platform path handling
-- **Node.js `os.homedir()`** — default scan directory
-- **`@anthropic-ai/claude-agent-sdk` `query()`** — AI analysis via OAuth token (reads `CLAUDE_CODE_OAUTH_TOKEN` from env, no API key needed)
+- **subagent_create_batch** — already supports spawning multiple named agents in parallel with automatic agent definition resolution
+- **scout agent definition** (`agent/.pi/agents/scout.md`) — provides the scout's system prompt, tools (read, grep, find, ls), and model configuration
+- **subagent_create** — fallback for spawning a single scout when only one area needs exploration
 
 ## Verification
 
-1. `cd disk-cleanup && npm install && npm start` — server starts on port 3456
-2. Open `http://localhost:3456` — UI loads with directory input defaulting to home dir
-3. Click "Scan" on a small test directory — results appear grouped by category with correct sizes
-4. Click "Analyze with AI" — Claude streams analysis using OAuth token (Max Plan, no cost)
-5. Select some files and click "Delete" — confirmation modal appears, files are removed after confirm
-6. Verify protected directories (`/System`, `/Library`) are skipped during scan
-7. Check `deletion-log.json` records all deletions with timestamps
-8. Check deletion history panel shows recent deletions
+1. `cd agent/extensions && npx vitest run __tests__/mode-prompts.test.ts` — all existing + new tests pass
+2. `cd agent/extensions && npx vitest run` — full suite passes, no regressions
+3. Manual review: read the PLAN_PROMPT and confirm the scout instructions are clear, with good examples
+4. Edge case: verify the prompt still works for simple tasks (agent should know to skip scouts)

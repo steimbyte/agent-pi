@@ -37,6 +37,41 @@ describe("PLAN_PROMPT — Commander-first enforcement", () => {
 	});
 });
 
+describe("PLAN_PROMPT — scout-based context gathering", () => {
+	it("instructs spawning scout subagents for context gathering", () => {
+		expect(PLAN_PROMPT.toLowerCase()).toContain("scout");
+	});
+
+	it("references subagent_create_batch tool", () => {
+		expect(PLAN_PROMPT).toContain("subagent_create_batch");
+	});
+
+	it("specifies spawning 4 scouts by default", () => {
+		expect(PLAN_PROMPT).toContain("4 scout subagents");
+	});
+
+	it("includes example scout dispatch with focused tasks", () => {
+		expect(PLAN_PROMPT).toContain("Structure scout");
+		expect(PLAN_PROMPT).toContain("Pattern scout");
+		expect(PLAN_PROMPT).toContain("Data flow scout");
+		expect(PLAN_PROMPT).toContain("Test scout");
+	});
+
+	it("provides guidance on skipping scouts for simple tasks", () => {
+		expect(PLAN_PROMPT).toContain("Simple tasks");
+		expect(PLAN_PROMPT).toContain("skip scouts");
+	});
+
+	it("instructs to synthesize scout findings", () => {
+		expect(PLAN_PROMPT.toLowerCase()).toContain("synthesize");
+	});
+
+	it("lists typical scout assignment types", () => {
+		expect(PLAN_PROMPT).toContain("Dependency scout");
+		expect(PLAN_PROMPT).toContain("Config scout");
+	});
+});
+
 describe("PLAN_PROMPT — structured plan format", () => {
 	it("teaches phased plan structure", () => {
 		expect(PLAN_PROMPT).toContain("Phase");

@@ -548,6 +548,25 @@ export function generateCompletionReportHTML(opts: {
   .done-banner .done-actions .btn {
     white-space: nowrap;
   }
+  .icon-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+  .icon-btn:hover {
+    background: var(--surface2);
+    color: var(--text);
+    border-color: var(--text-dim);
+  }
   .done-banner .done-icon {
     width: 32px;
     height: 32px;
@@ -1150,9 +1169,7 @@ export function generateCompletionReportHTML(opts: {
       '<div class="done-content"><div class="done-text">Report Complete</div>' +
       '<div class="done-sub">You can close this tab.</div></div>' +
       '<div class="done-actions">' +
-      '<button class="btn btn-ghost" onclick="copyReport()">Copy</button>' +
-      '<button class="btn btn-ghost" onclick="saveReport()">Save</button>' +
-      '<button class="btn btn-ghost" onclick="downloadStandalone()">Standalone</button>' +
+      '<button class="icon-btn" onclick="copyReport()" title="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>' +
       '</div>';
     var header = document.querySelector('.header');
     header.parentNode.insertBefore(banner, header.nextSibling);

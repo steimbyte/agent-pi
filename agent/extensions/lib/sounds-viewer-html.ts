@@ -698,6 +698,24 @@ export function generateSoundsViewerHTML(opts: {
   .empty-state h3 { font-size: 16px; color: var(--text-muted); margin-bottom: 6px; }
   .empty-state p { font-size: 13px; }
 
+  /* ── Inline SVG Icons ────────────────── */
+  .icon-inline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    vertical-align: -2px;
+    flex-shrink: 0;
+  }
+  .icon-inline svg {
+    width: 100%;
+    height: 100%;
+  }
+  .icon-16 { width: 16px; height: 16px; }
+  .icon-20 { width: 20px; height: 20px; vertical-align: -4px; }
+  .icon-48 { width: 48px; height: 48px; }
+
   /* ── Loading ────────────────────────── */
   @keyframes spin {
     from { transform: rotate(0deg); }
@@ -730,7 +748,7 @@ export function generateSoundsViewerHTML(opts: {
     <input type="text" id="searchInput" placeholder="Search sounds by name, tags, keywords..." autocomplete="off" spellcheck="false">
   </div>
   <div class="volume-control">
-    <span>🔊</span>
+    <span class="icon-inline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></span>
     <input type="range" id="volumeSlider" min="0" max="100" step="5">
     <span id="volumeLabel">50%</span>
   </div>
@@ -753,7 +771,7 @@ export function generateSoundsViewerHTML(opts: {
     </div>
     <div class="sound-grid" id="soundGrid"></div>
     <div class="empty-state" id="emptyState" style="display:none">
-      <div class="icon">🔇</div>
+      <div class="icon"><span class="icon-inline icon-48" style="color:var(--text-dim)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg></span></div>
       <h3>No sounds found</h3>
       <p>Try a different search or category</p>
     </div>
@@ -784,7 +802,7 @@ export function generateSoundsViewerHTML(opts: {
   </div>
   <div class="footer-right">
     <button class="btn btn-ghost" onclick="cancelAndClose()">Cancel</button>
-    <button class="btn btn-primary" onclick="applyAndClose()">✓ Apply & Close</button>
+    <button class="btn btn-primary" onclick="applyAndClose()"><span class="icon-inline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span> Apply & Close</button>
   </div>
 </div>
 
@@ -815,6 +833,25 @@ export function generateSoundsViewerHTML(opts: {
     { name: 'session_compact', label: 'Context Compacted', desc: 'Context compaction' },
   ];
 
+  // ── SVG Icon Helper ────────────────────────
+  const SVG_ATTRS = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+  const ICONS = {
+    volume:    '<svg ' + SVG_ATTRS + '><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>',
+    mute:      '<svg ' + SVG_ATTRS + '><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>',
+    play:      '<svg ' + SVG_ATTRS + '><polygon points="5 3 19 12 5 21 5 3"/></svg>',
+    bars:      '<svg ' + SVG_ATTRS + '><rect x="4" y="14" width="4" height="6" rx="1" fill="currentColor" stroke="none"/><rect x="10" y="8" width="4" height="12" rx="1" fill="currentColor" stroke="none"/><rect x="16" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none"/></svg>',
+    clock:     '<svg ' + SVG_ATTRS + '><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+    box:       '<svg ' + SVG_ATTRS + '><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>',
+    file:      '<svg ' + SVG_ATTRS + '><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+    check:     '<svg ' + SVG_ATTRS + '><polyline points="20 6 9 17 4 12"/></svg>',
+    x:         '<svg ' + SVG_ATTRS + '><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+    more:      '<svg ' + SVG_ATTRS + '><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="19" cy="12" r="1" fill="currentColor"/><circle cx="5" cy="12" r="1" fill="currentColor"/></svg>',
+    search:    '<svg ' + SVG_ATTRS + '><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
+  };
+  function icon(name, cls) {
+    return '<span class="icon-inline' + (cls ? ' ' + cls : '') + '">' + (ICONS[name] || '') + '</span>';
+  }
+
   // ── Init ───────────────────────────────────
   document.getElementById('volumeSlider').value = Math.round(config.volume * 100);
   document.getElementById('volumeLabel').textContent = Math.round(config.volume * 100) + '%';
@@ -823,6 +860,11 @@ export function generateSoundsViewerHTML(opts: {
   renderSounds();
   renderHookSlots();
   updateCounts();
+
+  // ── Heartbeat ──────────────────────────────
+  setInterval(() => {
+    fetch('http://127.0.0.1:' + PORT + '/heartbeat', { method: 'POST' }).catch(() => {});
+  }, 5000);
 
   // ── Search ─────────────────────────────────
   const searchInput = document.getElementById('searchInput');
@@ -867,10 +909,10 @@ export function generateSoundsViewerHTML(opts: {
   function updateEnableToggle() {
     const btn = document.getElementById('enableToggle');
     if (config.enabled) {
-      btn.textContent = '🔊 Enabled';
+      btn.innerHTML = icon('volume') + ' Enabled';
       btn.classList.add('active');
     } else {
-      btn.textContent = '🔇 Disabled';
+      btn.innerHTML = icon('mute') + ' Disabled';
       btn.classList.remove('active');
     }
   }
@@ -961,19 +1003,19 @@ export function generateSoundsViewerHTML(opts: {
           '</div>' +
         '</div>' +
         '<div class="card-meta">' +
-          '<span>⏱ ' + duration + '</span>' +
-          '<span>📦 ' + size + '</span>' +
-          '<span>📜 ' + license + '</span>' +
+          '<span>' + icon('clock') + ' ' + duration + '</span>' +
+          '<span>' + icon('box') + ' ' + size + '</span>' +
+          '<span>' + icon('file') + ' ' + license + '</span>' +
         '</div>' +
         (tags.length ? '<div class="card-tags">' + tags.map(t => '<span class="tag">' + esc(t) + '</span>').join('') + '</div>' : '') +
-        (assignedHooks.length ? '<div style="font-size:11px;color:var(--success);margin-top:2px">✓ ' + assignedHooks.join(', ') + '</div>' : '') +
+        (assignedHooks.length ? '<div style="font-size:11px;color:var(--success);margin-top:2px">' + icon('check') + ' ' + assignedHooks.join(', ') + '</div>' : '') +
         '<div class="card-actions">' +
           '<button class="btn btn-play' + (isPlaying ? ' playing' : '') + '" onclick="togglePlay(\\'' + s.name + '\\')">' +
-            (isPlaying ? '<span class="playing-indicator">♪</span> Playing' : '▶ Play') +
+            (isPlaying ? '<span class="playing-indicator">' + icon('bars') + '</span> Playing' : icon('play') + ' Play') +
           '</button>' +
           '<div style="position:relative">' +
             '<button class="btn btn-assign' + (isAssigned ? ' assigned' : '') + '" onclick="toggleAssignDropdown(event, \\'' + s.name + '\\')">' +
-              (isAssigned ? '✓ Assigned' : '+ Assign') +
+              (isAssigned ? icon('check') + ' Assigned' : '+ Assign') +
             '</button>' +
             '<div class="assign-dropdown' + (openDropdown === s.name ? ' open' : '') + '" data-dropdown="' + s.name + '">' +
               '<div class="assign-dropdown-title">Assign to Hook</div>' +
@@ -985,12 +1027,12 @@ export function generateSoundsViewerHTML(opts: {
                     '<div class="hook-name">' + h.label + '</div>' +
                     '<div class="hook-desc">' + h.desc + '</div>' +
                   '</div>' +
-                  (isThis ? '<span class="hook-check">✓</span>' : (current ? '<span class="hook-current">' + esc(current) + '</span>' : '')) +
+                  (isThis ? '<span class="hook-check">' + icon('check') + '</span>' : (current ? '<span class="hook-current">' + esc(current) + '</span>' : '')) +
                 '</div>';
               }).join('') +
             '</div>' +
           '</div>' +
-          '<button class="btn btn-ghost" onclick="openDetail(\\'' + s.name + '\\')" title="Details">⋯</button>' +
+          '<button class="btn btn-ghost" onclick="openDetail(\\'' + s.name + '\\')" title="Details">' + icon('more') + '</button>' +
         '</div>' +
       '</div>';
     }).join('');
@@ -1025,8 +1067,8 @@ export function generateSoundsViewerHTML(opts: {
     if (detailSound === name) renderDetail(name);
 
     try {
-      // Fetch sound data from soundcn.xyz
-      const resp = await fetch('https://soundcn.xyz/r/' + name + '.json');
+      // Fetch sound data via local proxy (avoids CORS)
+      const resp = await fetch('/api/sound/' + encodeURIComponent(name));
       if (!resp.ok) throw new Error('Failed to fetch sound');
       const data = await resp.json();
 
@@ -1122,7 +1164,7 @@ export function generateSoundsViewerHTML(opts: {
       } else {
         // Fetch and install
         try {
-          const resp = await fetch('https://soundcn.xyz/r/' + soundName + '.json');
+          const resp = await fetch('/api/sound/' + encodeURIComponent(soundName));
           const data = await resp.json();
           const fileContent = data.files?.[0]?.content || '';
           const match = fileContent.match(/dataUri:\\s*"(data:audio\\/[^"]+)"/);
@@ -1168,8 +1210,8 @@ export function generateSoundsViewerHTML(opts: {
         '<div class="hook-slot-sound">' +
           (sound
             ? '<span class="sound-name">' + esc(sound) + '</span>' +
-              '<button class="preview-btn" onclick="togglePlay(\\'' + sound + '\\')" title="Preview">▶</button>' +
-              '<button class="remove-btn" onclick="unassignHook(\\'' + h.name + '\\')" title="Remove">×</button>'
+              '<button class="preview-btn" onclick="togglePlay(\\'' + sound + '\\')" title="Preview">' + icon('play') + '</button>' +
+              '<button class="remove-btn" onclick="unassignHook(\\'' + h.name + '\\')" title="Remove">' + icon('x') + '</button>'
             : '<span class="empty">No sound assigned</span>') +
         '</div>' +
       '</div>';
@@ -1235,7 +1277,7 @@ export function generateSoundsViewerHTML(opts: {
       '<div class="detail-header">' +
         '<h2>' + esc(s.title) + '</h2>' +
         '<p>' + esc(s.description) + '</p>' +
-        (assignedHooks.length ? '<div style="margin-top:8px;font-size:12px;color:var(--success)">✓ Assigned to: ' + assignedHooks.join(', ') + '</div>' : '') +
+        (assignedHooks.length ? '<div style="margin-top:8px;font-size:12px;color:var(--success)">' + icon('check') + ' Assigned to: ' + assignedHooks.join(', ') + '</div>' : '') +
       '</div>' +
       '<div class="detail-body">' +
         '<div class="detail-meta-grid">' +
@@ -1250,7 +1292,7 @@ export function generateSoundsViewerHTML(opts: {
       '</div>' +
       '<div class="detail-actions">' +
         '<button class="btn btn-play' + (isPlaying ? ' playing' : '') + '" onclick="togglePlay(\\'' + name + '\\')">' +
-          (isPlaying ? '<span class="playing-indicator">♪</span> Stop' : '▶ Play Preview') +
+          (isPlaying ? '<span class="playing-indicator">' + icon('bars') + '</span> Stop' : icon('play') + ' Play Preview') +
         '</button>' +
         '<div style="position:relative">' +
           '<button class="btn btn-assign" onclick="toggleDetailAssign(event, \\'' + name + '\\')">' +
@@ -1263,7 +1305,7 @@ export function generateSoundsViewerHTML(opts: {
               const isThis = current === name;
               return '<div class="assign-option" onclick="assignFromDetail(\\'' + h.name + '\\', \\'' + name + '\\')">' +
                 '<div><div class="hook-name">' + h.label + '</div><div class="hook-desc">' + h.desc + '</div></div>' +
-                (isThis ? '<span class="hook-check">✓</span>' : (current ? '<span class="hook-current">' + esc(current) + '</span>' : '')) +
+                (isThis ? '<span class="hook-check">' + icon('check') + '</span>' : (current ? '<span class="hook-current">' + esc(current) + '</span>' : '')) +
               '</div>';
             }).join('') +
           '</div>' +
@@ -1321,6 +1363,7 @@ export function generateSoundsViewerHTML(opts: {
           enabled: config.enabled,
         }),
       });
+      setTimeout(function() { window.close(); }, 300);
     } catch {}
   };
 
@@ -1331,6 +1374,7 @@ export function generateSoundsViewerHTML(opts: {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'cancelled' }),
       });
+      setTimeout(function() { window.close(); }, 300);
     } catch {}
   };
 

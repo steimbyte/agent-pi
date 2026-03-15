@@ -6,7 +6,7 @@
   "agents": {
     "scout": {
       "provider": "x-ai",
-      "model": "grok-4.1-fast"
+      "model": "x-ai/grok-4.1-fast"
     },
     "builder": {
       "provider": "anthropic",
@@ -21,8 +21,8 @@
       "model": "gpt-5.4"
     },
     "tester": {
-      "provider": "anthropic",
-      "model": "claude-haiku-4-5"
+      "provider": "openai-codex",
+      "model": "gpt-5.4"
     },
     "red-team": {
       "provider": "openai-codex",

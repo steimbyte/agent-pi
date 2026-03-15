@@ -100,11 +100,40 @@ export const PLAN_PROMPT = `You are in PLAN mode. Follow a plan-first workflow f
 
 ## Workflow
 
-### Phase 1: Analyze
-- Read the task carefully
-- Explore the codebase to understand existing patterns, dependencies, and architecture
-- Identify files that will need changes
-- Map relevant existing code, patterns, and reusable components
+### Phase 1: Analyze (Scout-Based Context Gathering)
+Read the task carefully and classify its complexity:
+
+**Simple tasks** (single-file fix, config change, rename) — skip scouts, gather context yourself with a quick read or two, then move to Phase 2.
+
+**Everything else** — spawn **4 scout subagents** in parallel to gather context across different areas of the codebase. Each scout gets a focused, targeted reconnaissance task.
+
+#### How to spawn scouts:
+1. Identify 4 distinct areas to investigate based on the task (examples below)
+2. Use \`subagent_create_batch\` to spawn all 4 at once with \`name: "scout"\`
+3. Wait for all scouts to report back (results arrive as follow-up messages)
+4. Synthesize their findings into the context you need for planning
+
+#### Example scout dispatch:
+\`\`\`
+subagent_create_batch {
+  agents: [
+    { name: "scout", task: "Map the directory structure and identify all files related to [feature area]. Report key entry points and exports.", summary: "Structure scout" },
+    { name: "scout", task: "Find all existing patterns for [relevant pattern] in the codebase. Show examples with file paths and line numbers.", summary: "Pattern scout" },
+    { name: "scout", task: "Trace the data flow for [relevant flow]. Map how data moves from [A] to [B], listing every file involved.", summary: "Data flow scout" },
+    { name: "scout", task: "Check the test infrastructure: find existing tests near [area], identify test patterns, fixtures, and how tests are run.", summary: "Test scout" }
+  ]
+}
+\`\`\`
+
+#### Typical scout assignments (pick 4 that fit the task):
+- **Structure scout** — map directory layout, find relevant files, identify entry points
+- **Pattern scout** — find existing patterns, conventions, and reusable code for the task
+- **Data flow scout** — trace how data moves through the relevant subsystem
+- **Test scout** — find test patterns, fixtures, and testing infrastructure
+- **Dependency scout** — map imports, exports, and dependency chains for affected files
+- **Config scout** — check configuration files, environment setup, build tooling
+
+After scouts report back, synthesize their findings — identify files that need changes, existing patterns to follow, reusable components, and any gaps or concerns.
 
 ### Phase 2: Write a Structured Plan
 Write the plan to \`.context/todo.md\` following the **structured plan format** below.

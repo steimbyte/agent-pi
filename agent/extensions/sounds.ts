@@ -70,6 +70,13 @@ function startSoundsServer(
 		const resultPromise = new Promise<SoundsViewerResult>((res) => {
 			resolveResult = res;
 		});
+		let lastHeartbeat = Date.now();
+		const heartbeatCheck = setInterval(() => {
+			if (Date.now() - lastHeartbeat > 15_000) {
+				clearInterval(heartbeatCheck);
+				resolveResult!({ action: "cancelled" });
+			}
+		}, 5_000);
 
 		const server = createServer((req: IncomingMessage, res: ServerResponse) => {
 			res.setHeader("Access-Control-Allow-Origin", "*");
@@ -105,6 +112,44 @@ function startSoundsServer(
 					res.writeHead(404);
 					res.end();
 				}
+				return;
+			}
+
+			// Heartbeat keep-alive
+			if (req.method === "POST" && url.pathname === "/heartbeat") {
+				lastHeartbeat = Date.now();
+				res.writeHead(200, { "Content-Type": "application/json" });
+				res.end(JSON.stringify({ ok: true }));
+				return;
+			}
+
+			// CORS proxy: fetch sound data from soundcn.xyz server-side
+			if (req.method === "GET" && url.pathname.startsWith("/api/sound/")) {
+				const name = decodeURIComponent(url.pathname.slice("/api/sound/".length));
+				if (!name || name.includes("/") || name.includes("..")) {
+					res.writeHead(400, { "Content-Type": "application/json" });
+					res.end(JSON.stringify({ error: "Invalid sound name" }));
+					return;
+				}
+				(async () => {
+					try {
+						const upstream = await fetch(`https://soundcn.xyz/r/${encodeURIComponent(name)}.json`);
+						if (!upstream.ok) {
+							res.writeHead(upstream.status, { "Content-Type": "application/json" });
+							res.end(JSON.stringify({ error: `Upstream returned ${upstream.status}` }));
+							return;
+						}
+						const body = await upstream.text();
+						res.writeHead(200, {
+							"Content-Type": "application/json",
+							"Cache-Control": "public, max-age=3600",
+						});
+						res.end(body);
+					} catch (err: any) {
+						res.writeHead(502, { "Content-Type": "application/json" });
+						res.end(JSON.stringify({ error: err?.message || "Proxy fetch failed" }));
+					}
+				})();
 				return;
 			}
 
@@ -186,7 +231,7 @@ function startSoundsServer(
 			resolveSetup({
 				port: addr.port,
 				server,
-				waitForResult: () => resultPromise,
+				waitForResult: () => resultPromise.finally(() => clearInterval(heartbeatCheck)),
 			});
 		});
 	});
