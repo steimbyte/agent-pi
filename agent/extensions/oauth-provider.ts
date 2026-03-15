@@ -44,6 +44,16 @@ const FAR_FUTURE_EXPIRY = Date.now() + 365 * 24 * 60 * 60 * 1000; // 1 year from
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
+/** Bridge our env vars to ANTHROPIC_OAUTH_TOKEN so the pi-ai library picks them up. */
+export function bridgeOAuthEnvVar(): void {
+	if (!process.env.ANTHROPIC_OAUTH_TOKEN) {
+		const token = process.env[ENV_PRIMARY] || process.env[ENV_ALIAS];
+		if (token) {
+			process.env.ANTHROPIC_OAUTH_TOKEN = token;
+		}
+	}
+}
+
 function getOAuthToken(): string | undefined {
 	return process.env[ENV_PRIMARY] || process.env[ENV_ALIAS];
 }
@@ -83,6 +93,9 @@ function maskToken(token: string): string {
 // ── Extension Factory ────────────────────────────────────────────────
 
 export default function oauthProvider(pi: ExtensionAPI): void {
+	// Bridge env vars so the underlying pi-ai library sees ANTHROPIC_OAUTH_TOKEN
+	bridgeOAuthEnvVar();
+
 	const token = getOAuthToken();
 	const source = getTokenSource();
 
