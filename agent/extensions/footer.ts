@@ -1,7 +1,7 @@
-// ABOUTME: Footer widget displaying model name, context percentage, and working directory.
+// ABOUTME: Footer widget displaying model name, context percentage + window size, and working directory.
 // ABOUTME: Shows context usage warnings; core pi framework handles actual auto-compaction.
 /**
- * Footer — Dark status bar with model · context % · directory.
+ * Footer — Dark status bar with model · context % / window · directory.
  *
  * Context compaction is handled by pi's core _runAutoCompaction which properly
  * emits auto_compaction_start/end events. The interactive-mode handles these
@@ -33,6 +33,17 @@ function shortModelName(name: string | undefined): string {
 	return parts.join(" ") || name.toLowerCase();
 }
 
+/** Format a token count into compact K/M notation: 200K, 1.2M */
+export function formatTokens(n: number): string {
+	if (n < 1000) return String(Math.round(n));
+	if (n < 1_000_000) {
+		const k = n / 1000;
+		return k % 1 === 0 ? `${k}K` : `${parseFloat(k.toFixed(1))}K`;
+	}
+	const m = n / 1_000_000;
+	return m % 1 === 0 ? `${m}M` : `${parseFloat(m.toFixed(1))}M`;
+}
+
 /** Last two path components: "Github-Work/pi-vs-claude-code" */
 function shortDir(cwd: string): string {
 	const child = basename(cwd);
@@ -50,11 +61,22 @@ function setupFooter(ctx: any, onUnsub: (unsub: () => void) => void) {
 			render(width: number): string[] {
 				const model = shortModelName(ctx.model?.name);
 				const usage = ctx.getContextUsage();
-				const pct = usage?.percent != null ? `${Math.round(usage.percent)}%` : "–";
+				const contextWindow = ctx.model?.contextWindow || 0;
+
+				let usageStr = "–";
+				if (usage?.percent != null) {
+					const pct = `${Math.round(usage.percent)}%`;
+					if (contextWindow > 0) {
+						usageStr = `${pct} / ${formatTokens(contextWindow)}`;
+					} else {
+						usageStr = pct;
+					}
+				}
+
 				const dir = shortDir(ctx.cwd);
 				const sep = theme.fg("dim", " | ");
 				const modelStr = theme.fg("accent", theme.bold(model));
-				const leftContent = ` ` + modelStr + sep + theme.fg("dim", pct) + sep + theme.fg("dim", dir);
+				const leftContent = ` ` + modelStr + sep + theme.fg("dim", usageStr) + sep + theme.fg("dim", dir);
 
 				return [truncateToWidth(leftContent, width, "")];
 			},

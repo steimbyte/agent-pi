@@ -6,7 +6,7 @@
   "agents": {
     "scout": {
       "provider": "x-ai",
-      "model": "x-ai/grok-4.1-fast"
+      "model": "grok-4.1-fast"
     },
     "builder": {
       "provider": "anthropic",

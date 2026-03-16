@@ -70,6 +70,7 @@ const TOOL_MAP: Record<string, string> = {
 	"mcp__commander__commander_mailbox": "commander_mailbox",
 	"mcp__commander__commander_orchestration": "commander_orchestration",
 	"mcp__commander__commander_dependency": "commander_dependency",
+	"mcp__commander__commander_agentmail": "commander_agentmail",
 	// Legacy tool names used in session-cleanup.md
 	"mcp__commander__commander_session_cleanup": "commander_session",
 	"mcp__commander__commander_terminal_sessions": "commander_session",

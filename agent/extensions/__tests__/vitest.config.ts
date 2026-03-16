@@ -3,6 +3,11 @@
 // Located in extensions/__tests__/ - paths adjusted for new location
 
 import { defineConfig } from "vitest/config";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const mocksDir = resolve(__dirname, "..", "mocks");
 
 export default defineConfig({
 	test: {
@@ -20,19 +25,13 @@ export default defineConfig({
 			branches: 75,
 			statements: 80,
 		},
-		alias: {
-			"@mariozechner/pi-tui": "../mocks/pi-tui.ts",
-			"@mariozechner/pi-coding-agent": "../mocks/pi-coding-agent.ts",
-			"@mariozechner/pi-ai": "../mocks/pi-ai.ts",
-			"@sinclair/typebox": "../mocks/typebox.ts",
-		},
 	},
 	resolve: {
 		alias: {
-			"@mariozechner/pi-tui": "<rootDir>/../mocks/pi-tui.ts",
-			"@mariozechner/pi-coding-agent": "<rootDir>/../mocks/pi-coding-agent.ts",
-			"@mariozechner/pi-ai": "<rootDir>/../mocks/pi-ai.ts",
-			"@sinclair/typebox": "<rootDir>/../mocks/typebox.ts",
+			"@mariozechner/pi-tui": resolve(mocksDir, "pi-tui.ts"),
+			"@mariozechner/pi-coding-agent": resolve(mocksDir, "pi-coding-agent.ts"),
+			"@mariozechner/pi-ai": resolve(mocksDir, "pi-ai.ts"),
+			"@sinclair/typebox": resolve(mocksDir, "typebox.ts"),
 		},
 	},
 });

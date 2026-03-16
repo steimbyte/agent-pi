@@ -14,6 +14,7 @@ const SERVER_ENV: Record<string, string> = {
 	JIRA_URL: process.env.JIRA_URL || "",
 	JIRA_EMAIL: process.env.JIRA_EMAIL || "",
 	JIRA_API_TOKEN: process.env.JIRA_API_TOKEN || "",
+	AGENTMAIL_API_KEY: process.env.AGENTMAIL_API_KEY || "",
 };
 
 // ── Tool definitions ────────────────────────────────────────────────
@@ -243,6 +244,31 @@ EXAMPLE - Create blocking dependency:
 EXAMPLE - Find ready work:
 { "operation": "ready_tasks" }`,
 	},
+	{
+		name: "commander_agentmail",
+		label: "Commander AgentMail",
+		description: `Send emails via AgentMail — email reports, briefings, and custom messages.
+
+Sends emails from the "Commander Assistant" inbox via AgentMail API.
+Default recipient: ruizrica2@gmail.com
+
+OPERATIONS:
+- "send:report": Email a generated report (requires content, optional report_name)
+- "send:briefing": Email a morning briefing (requires content)
+- "send:custom": Send a custom email (requires subject + content)
+- "status:check": Check AgentMail connection and inbox status
+
+Content supports markdown (auto-converted to styled HTML), raw HTML, or plain text.
+
+EXAMPLE - Send a report:
+{ "operation": "send:report", "report_name": "Weekly Code Review", "content": "# Report\\n..." }
+
+EXAMPLE - Send custom email:
+{ "operation": "send:custom", "subject": "Task Update", "content": "The refactor is complete..." }
+
+EXAMPLE - Check status:
+{ "operation": "status:check" }`,
+	},
 ];
 
 // ── Per-tool schemas ────────────────────────────────────────────────
@@ -367,6 +393,15 @@ const DependencyParams = Type.Object({
 	group_id: Type.Optional(Type.Number({ description: "Group ID (for graph)" })),
 }, { additionalProperties: true });
 
+const AgentMailParams = Type.Object({
+	operation: Type.String({ description: "Operation to perform: send:report, send:briefing, send:custom, status:check" }),
+	to: Type.Optional(Type.String({ description: "Recipient email address (default: ruizrica2@gmail.com)" })),
+	subject: Type.Optional(Type.String({ description: "Email subject line (for send:custom, or override for send:report)" })),
+	content: Type.Optional(Type.String({ description: "Email content — markdown, HTML, or plain text" })),
+	report_name: Type.Optional(Type.String({ description: "Report name (for send:report — used in subject line)" })),
+	format: Type.Optional(Type.String({ description: "Content format: markdown (default), html, text" })),
+}, { additionalProperties: true });
+
 // Map tool names to their specific parameter schemas
 const TOOL_PARAMS: Record<string, ReturnType<typeof Type.Object>> = {
 	commander_task: TaskParams,
@@ -377,6 +412,7 @@ const TOOL_PARAMS: Record<string, ReturnType<typeof Type.Object>> = {
 	commander_mailbox: MailboxParams,
 	commander_orchestration: OrchestrationParams,
 	commander_dependency: DependencyParams,
+	commander_agentmail: AgentMailParams,
 };
 
 // ── Extension entry point ───────────────────────────────────────────
