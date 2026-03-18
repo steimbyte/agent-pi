@@ -1,6 +1,6 @@
 {
   "quietStartup": true,
-  "lastChangelogVersion": "0.58.3",
+  "lastChangelogVersion": "0.60.0",
   "theme": "midnight-ocean",
   "transport": "sse",
   "defaultProvider": "anthropic",
