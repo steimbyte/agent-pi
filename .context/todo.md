@@ -1,122 +1,69 @@
-# Plan: Open Source Prep — Remove Swagbucks & Set Up Dual-Remote Workflow with Guardrails
+# Plan: Install agent-browser Skill — Local Browser for Localhost and Remote Testing
 
 ## Context
 
-The `pi-dev` repo at `github.com/ruizrica/pi-dev` is about to be open-sourced. It currently contains proprietary Swagbucks sentiment analysis tooling — a work-specific skill that must not be public. The Swagbucks footprint spans three areas: (1) a skill directory at `agent/skills/swagbucks/` with 6 files including SKILL.md, reference docs, and templates, (2) two extension files — `agent/extensions/swagbucks-viewer.ts` (the tool + command registration, ~590 lines) and `agent/extensions/lib/swagbucks-viewer-html.ts` (the HTML template generator), and (3) a legacy plan file at `.context/plan-swagbucks-viewer-upgrade.md`.
+The project has a `web_test` tool (registered as an extension at `agent/extensions/web-test.ts`) that uses **Cloudflare Browser Rendering** — a remote service that deploys a Cloudflare Worker to take screenshots, extract content, and run a11y audits. Because it's a remote service, **it cannot access localhost or local network URLs** — it can only reach publicly-accessible websites. The agent currently has no way to test localhost dev servers, local web apps, or do interactive browser automation like form filling, clicking, scrolling, etc.
 
-The repo currently has two remotes: `origin` → `github.com/ruizrica/pi-dev.git` (private) and `prodege` → work fork. The strategy is: keep `origin` as the private repo, add a new `public` remote pointing to a public GitHub repo, create a clean `public` branch with Swagbucks surgically removed, and install guardrails (pre-push hook + CI check) to prevent accidentally pushing private content to the public remote.
+# Also rename the skil from web_test to web_remote and our new one to web_local
 
-**Important nuance:** Only Swagbucks-specific content is private. All other skills (agent-browser, autoresearch, slack-web, way-ios, etc.) and extensions are fine for open source.
+The `agent-browser` CLI tool (v0.21.2, available on npm) is a Playwright-based **local** headless browser that runs directly on the machine. It can access localhost, fill forms, click buttons, take screenshots, manage sessions, and do everything a real browser can do. A comprehensive skill already exists in the repo at `agent/skills/agent-browser/` with a well-written `SKILL.md`, 7 reference documents, and 3 template scripts. The skill has also already been copied to `~/.pi/agent/skills/agent-browser/` — however, the underlying `agent-browser` CLI binary is **broken** (the npm global install was removed, leaving a dangling symlink at `/Users/ricardo/.nvm/versions/node/v20.19.5/bin/agent-browser`).
 
-| Swagbucks File | Type | Lines (est) |
-|---|---|---|
-| `agent/skills/swagbucks/` (6 files) | Skill directory | ~600 |
-| `agent/extensions/swagbucks-viewer.ts` | Extension (tool + command) | ~590 |
-| `agent/extensions/lib/swagbucks-viewer-html.ts` | HTML template lib | ~900+ |
-| `.context/plan-swagbucks-viewer-upgrade.md` | Legacy plan | ~100 |
+The critical gap: The agent's SKILL.md does not clearly warn against using `web_test` for localhost testing, and the `agent-browser` binary itself needs to be reinstalled. The skill also needs a clear directive about when to use `agent-browser` vs `web_test`.
 
----
+**Current state:**
+- `web_test` tool: Working, remote-only (Cloudflare Worker), registered as Pi extension
+- `agent-browser` CLI: Broken symlink, needs `npm install -g agent-browser`
+- `agent-browser` skill: Fully written in repo at `agent/skills/agent-browser/` and copied to `~/.pi/agent/skills/agent-browser/`
+- Playwright browsers: Unknown if installed (need `agent-browser install` after CLI install)
 
-## Phase 1: Create the Public Branch (Clean Slate)
-
-**Why:** The public repo needs a clean starting point without any Swagbucks content or its git history. A fresh orphan branch is the simplest and safest approach — no risk of history leaking proprietary content.
-
-- [ ] Create a new branch `public` from current `master`
-- [ ] Remove all Swagbucks files from this branch:
-  - `agent/skills/swagbucks/` (entire directory)
-  - `agent/extensions/swagbucks-viewer.ts`
-  - `agent/extensions/lib/swagbucks-viewer-html.ts`
-  - `.context/plan-swagbucks-viewer-upgrade.md`
-- [ ] Remove all Way (work-specific) skill files from this branch:
-  - `agent/skills/way-ios/` (entire directory)
-  - `agent/skills/way-simulators/` (entire directory)
-- [ ] Remove any Swagbucks references from `.context/session-state.json` and `.context/reports/index.json` if present
-- [ ] Verify no remaining references: `grep -ri swagbucks` returns only this plan file (or nothing)
-- [ ] Commit as "chore: remove proprietary Swagbucks content for open source release"
+**What needs to happen:**
+1. Reinstall the `agent-browser` CLI globally
+2. Install Playwright browser binaries
+3. Update the SKILL.md to clearly distinguish local vs remote browser capabilities
+4. Add a "when to use" section that explicitly tells the agent NOT to use `web_test` for localhost
+5. Sync the updated skill to `~/.pi/agent/skills/agent-browser/`
+6. Verify everything works end-to-end
 
 ---
 
-## Phase 2: Configure Dual-Remote Git Workflow
+## Phase 1: Reinstall agent-browser CLI + Browser Binaries
 
-**Why:** You need to push day-to-day work to `origin` (private) and selectively push the cleaned public branch to a separate public remote. This keeps the workflow simple — `git push` always goes to private, `git push public` is explicit.
+**Why:** The CLI binary is a broken symlink. Without a working binary, the entire skill is useless.
 
-- [ ] Keep `origin` as-is (private `pi-dev` repo — your default push target)
-- [ ] Create the public GitHub repo (user will do this manually on GitHub)
-- [ ] Add `public` remote: `git remote add public https://github.com/ruizrica/<public-repo-name>.git`
-- [ ] Push the clean `public` branch: `git push public public:main`
-- [ ] Document the workflow in a `CONTRIBUTING.md` or `README` section:
-  - `git push` → pushes to private origin (default)
-  - `git push public public:main` → pushes to public repo
-  - Never push `master` to `public` remote
+**Run commands:**
+- `npm install -g agent-browser` — reinstall the CLI globally
+- `agent-browser install` — install Playwright Chromium binary
+- `agent-browser --version` — verify installation
 
 ---
 
-## Phase 3: Install Pre-Push Guardrails
+## Phase 2: Update SKILL.md with Localhost Guidance + web_test Warning
 
-**Why:** Humans make mistakes. A pre-push hook is the last line of defense before proprietary content accidentally reaches the public repo. This hook runs automatically on every `git push` to the `public` remote.
+**Why:** The agent must clearly understand that `web_test` is a remote service that CANNOT reach localhost, and that `agent-browser` is the ONLY tool for local testing. Without this explicit guidance, the agent will default to `web_test` and fail on localhost URLs.
 
-**New file** → `.githooks/pre-push`
-- Detect when pushing to the `public` remote
-- Scan the branch being pushed for any files matching the private patterns:
-  - `agent/skills/swagbucks/**`
-  - `agent/extensions/swagbucks-viewer.ts`
-  - `agent/extensions/lib/swagbucks-viewer-html.ts`
-  - Any file containing "swagbucks" (case-insensitive grep on filenames)
-- If any private content is detected, **block the push** with a clear error message
-- Allow pushes to other remotes (origin, prodege) without interference
+**Modify** → `agent/skills/agent-browser/SKILL.md`
+- Add a prominent "IMPORTANT" section at the top, right after the frontmatter and before "Core Workflow"
+- Title: "When to Use This Skill (IMPORTANT)"
+- Content must cover:
+  - `agent-browser` is a LOCAL browser — it runs on this machine and can reach localhost, 127.0.0.1, local network IPs, and any remote URL
+  - `web_test` tool is a REMOTE service (Cloudflare Browser Rendering) — it CANNOT access localhost, 127.0.0.1, or any local network address. Do NOT use `web_test` for localhost testing.
+  - Use `agent-browser` for: localhost testing, form automation, multi-step workflows, interactive testing, screenshots of local dev servers, any URL
+  - Use `web_test` for: quick remote-only screenshots and a11y audits of publicly-accessible URLs (when no interaction is needed)
+- Update the description in frontmatter to mention localhost capability explicitly
 
-**New file** → `.private-patterns`
-- A simple gitignore-style list of patterns that should never appear in the public branch
-- Used by both the pre-push hook and CI check
-- Easy to extend when new private content is added later
-
-**Modify** → `.gitconfig` (local)
-- Set `core.hooksPath = .githooks` so the hook is version-controlled and portable
+**Modify** → `agent/skills/agent-browser/references/commands.md`  
+- No changes needed (already comprehensive)
 
 ---
 
-## Phase 4: Add CI Guardrail for Public Repo
+## Phase 3: Sync Updated Skill to Global Location + Verify
 
-**Why:** The pre-push hook only protects your local machine. A GitHub Actions workflow on the public repo provides a second layer — it will fail the build if private content somehow makes it through.
+**Why:** The skill at `~/.pi/agent/skills/agent-browser/` is what Pi actually loads. We need to sync our updated version there and verify the full chain works.
 
-**New file** → `.github/workflows/public-guard.yml`
-- Triggers on push and PR to the public repo
-- Reads `.private-patterns` and scans all files in the repo
-- Fails with a clear error if any private patterns are matched
-- Lightweight — just a shell script step, no dependencies
-
----
-
-## Phase 5: Update .gitignore & Documentation
-
-**Why:** Prevent future private artifacts from leaking and document the dual-repo workflow so future-you (or collaborators) understand the setup.
-
-**Modify** → `.gitignore`
-- Add comment section `# Private/proprietary content (never in public repo)`
-- Add any Swagbucks-generated artifacts if applicable
-
-**New file** → `OPEN_SOURCE.md` (or section in README)
-- Explain the dual-remote setup
-- Document how to add new private content (update `.private-patterns`)
-- Document the push workflow
-- Note that `master` is private-only, `public` branch feeds the public repo
-
-**Modify** → `README.md` (if it exists)
-- Add badge or note about the public version
-- Link to the open source repo
-
----
-
-## Phase 6: Verify & Test
-
-**Why:** Trust but verify. Run the full guardrail suite before the public push tonight.
-
-- [ ] Verify `public` branch has zero Swagbucks references
-- [ ] Test pre-push hook: attempt `git push public master:main` → should be BLOCKED
-- [ ] Test pre-push hook: `git push public public:main` → should SUCCEED (no private content)
-- [ ] Test that `git push origin master` still works without interference
-- [ ] Verify `.private-patterns` catches all known private paths
-- [ ] Do a dry-run of the CI workflow locally (run the same grep/check script)
+**Run commands:**
+- Copy updated skill from `agent/skills/agent-browser/` to `~/.pi/agent/skills/agent-browser/`
+- Verify: `agent-browser open http://localhost:3000` or `agent-browser open https://example.com` + `agent-browser snapshot -i` + `agent-browser close`
+- Verify skill files: `ls -R ~/.pi/agent/skills/agent-browser/`
 
 ---
 
@@ -124,27 +71,28 @@ The repo currently has two remotes: `origin` → `github.com/ruizrica/pi-dev.git
 
 | File | Action |
 |------|--------|
-| `agent/skills/swagbucks/` | Delete (entire directory, 6 files) |
-| `agent/extensions/swagbucks-viewer.ts` | Delete |
-| `agent/extensions/lib/swagbucks-viewer-html.ts` | Delete |
-| `.context/plan-swagbucks-viewer-upgrade.md` | Delete |
-| `.githooks/pre-push` | New |
-| `.private-patterns` | New |
-| `.github/workflows/public-guard.yml` | New |
-| `OPEN_SOURCE.md` | New |
-| `.gitignore` | Modify (add private section) |
-| `.git/config` | Modify (add public remote, set hooksPath) |
+| `agent/skills/agent-browser/SKILL.md` | Modify (add localhost guidance + web_test warning) |
+| `~/.pi/agent/skills/agent-browser/SKILL.md` | Sync (copy from repo) |
+| `~/.pi/agent/skills/agent-browser/references/*` | Sync (copy from repo) |
+| `~/.pi/agent/skills/agent-browser/templates/*` | Sync (copy from repo) |
 
 ## Reusable Components (no changes needed)
 
-- **All other skills** (agent-browser, autoresearch, slack-web, etc.) — untouched, safe for open source
-- **All other extensions** — no cross-references to Swagbucks in any other extension
-- **Core Pi infrastructure** — Swagbucks was cleanly isolated as a standalone extension + skill
+- **references/commands.md** — Full command reference, already comprehensive
+- **references/web-search.md** — Web search patterns, already written
+- **references/session-management.md** — Session isolation patterns
+- **references/authentication.md** — Auth flow patterns
+- **references/snapshot-refs.md** — Ref lifecycle documentation
+- **references/video-recording.md** — Recording workflows
+- **references/proxy-support.md** — Proxy configuration
+- **templates/*.sh** — Three ready-to-use automation scripts
 
 ## Verification
 
-1. `grep -ri swagbucks agent/` on `public` branch → zero results
-2. Pre-push hook blocks: `git push public master:main` → error with clear message
-3. Pre-push hook allows: `git push public public:main` → success
-4. CI workflow catches private patterns in simulated PR
-5. `git push origin master` → works normally (no hook interference)
+1. `agent-browser --version` returns 0.21.2 (or current)
+2. `agent-browser open https://example.com && agent-browser snapshot -i && agent-browser close` succeeds
+3. `~/.pi/agent/skills/agent-browser/SKILL.md` contains the "When to Use" section with localhost guidance
+4. `~/.pi/agent/skills/agent-browser/SKILL.md` contains explicit warning about NOT using `web_test` for localhost
+5. Skill frontmatter description mentions localhost capability
+6. All 7 reference files present in `~/.pi/agent/skills/agent-browser/references/`
+7. All 3 template scripts present in `~/.pi/agent/skills/agent-browser/templates/`

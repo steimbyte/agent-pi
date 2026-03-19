@@ -1,6 +1,6 @@
 # Reddit Scraping Workaround
 
-Reddit blocks headless browsers and returns "You've been blocked by network security" for direct access via `web_test`. This applies to:
+Reddit blocks headless browsers and returns "You've been blocked by network security" for direct access via `web_remote`. This applies to:
 - `reddit.com/r/SwagBucks/`
 - `old.reddit.com/r/SwagBucks/`
 - `reddit.com/r/SwagBucks.json`
@@ -12,7 +12,7 @@ Google and Bing also block headless browsers with CAPTCHAs.
 Yahoo Search successfully indexes Reddit threads and returns rich snippets:
 
 ```
-web_test {
+web_remote {
   action: "content",
   url: "https://search.yahoo.com/search?p=site%3Areddit.com%2Fr%2FSwagBucks+<keywords>"
 }
@@ -39,7 +39,7 @@ Each result contains:
 
 ### Extracting Data from Yahoo Results
 
-The `web_test content` response contains page text in this format:
+The `web_remote content` response contains page text in this format:
 
 ```
 Reddit
@@ -59,7 +59,7 @@ Parse each result block to extract:
 Capture Yahoo search results as visual evidence:
 
 ```
-web_test {
+web_remote {
   action: "screenshot",
   url: "https://search.yahoo.com/search?p=site%3Areddit.com%2Fr%2FSwagBucks+survey+disqualified+banned+tracking",
   fullPage: true
@@ -80,7 +80,7 @@ These screenshots show the volume of Reddit threads on each topic, which itself 
 If Yahoo is blocked, try DuckDuckGo's HTML-only mode (sometimes works):
 
 ```
-web_test {
+web_remote {
   action: "content",
   url: "https://html.duckduckgo.com/html/?q=site%3Areddit.com%2Fr%2FSwagBucks+<keywords>"
 }

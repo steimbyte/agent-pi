@@ -504,7 +504,7 @@ export function generateSwagbucksSetupHTML(opts: {
         </label>
       </div>
       <div class="deep-scrape-note">
-        💡 Deep scraping opens actual pages via agent-browser for richer evidence. This adds ~3-5 minutes but provides thread screenshots, upvote counts, comment counts, and expanded review text that web_test alone can't capture.
+        💡 Deep scraping opens actual pages via agent-browser for richer evidence. This adds ~3-5 minutes but provides thread screenshots, upvote counts, comment counts, and expanded review text that web_remote alone can't capture.
       </div>
     </div>
   </div>

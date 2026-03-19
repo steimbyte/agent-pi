@@ -9,7 +9,7 @@ description: >
   and expanded app store reviews with visual proof screenshots. Invoke with /swagbucks
   or when the user asks to "validate swagbucks", "check swagbucks reviews", "swagbucks
   analysis", "swagbucks report", or "app store sentiment analysis".
-allowed-tools: Bash(agent-browser:*) Bash Read Write Edit web_test subagent_create_batch show_report show_swagbucks
+allowed-tools: Bash(agent-browser:*) Bash Read Write Edit web_remote subagent_create_batch show_report show_swagbucks
 ---
 
 # Swagbucks App Review & Sentiment Validation
@@ -42,8 +42,8 @@ The report viewer matches the design of plan-viewer and spec-viewer with:
 
 | Source | URL | Method |
 |--------|-----|--------|
-| iOS App Store | https://apps.apple.com/us/app/swagbucks-surveys-for-money/id640439547 | `web_test` content + screenshot |
-| Google Play Store | https://play.google.com/store/apps/details?id=com.prodege.swagbucksmobile | `web_test` content + screenshot |
+| iOS App Store | https://apps.apple.com/us/app/swagbucks-surveys-for-money/id640439547 | `web_remote` content + screenshot |
+| Google Play Store | https://play.google.com/store/apps/details?id=com.prodege.swagbucksmobile | `web_remote` content + screenshot |
 | Reddit r/SwagBucks | https://www.reddit.com/r/SwagBucks/ | Yahoo Search indexing (Reddit blocks headless browsers) |
 
 ## Phase 1: Data Collection
@@ -55,10 +55,10 @@ Collect data from all three sources in parallel where possible.
 Extract content and capture screenshots from both stores:
 
 ```
-web_test { action: "content", url: "https://apps.apple.com/us/app/swagbucks-surveys-for-money/id640439547" }
-web_test { action: "content", url: "https://play.google.com/store/apps/details?id=com.prodege.swagbucksmobile" }
-web_test { action: "screenshot", url: "https://apps.apple.com/us/app/swagbucks-surveys-for-money/id640439547", fullPage: true }
-web_test { action: "screenshot", url: "https://play.google.com/store/apps/details?id=com.prodege.swagbucksmobile", fullPage: true }
+web_remote { action: "content", url: "https://apps.apple.com/us/app/swagbucks-surveys-for-money/id640439547" }
+web_remote { action: "content", url: "https://play.google.com/store/apps/details?id=com.prodege.swagbucksmobile" }
+web_remote { action: "screenshot", url: "https://apps.apple.com/us/app/swagbucks-surveys-for-money/id640439547", fullPage: true }
+web_remote { action: "screenshot", url: "https://play.google.com/store/apps/details?id=com.prodege.swagbucksmobile", fullPage: true }
 ```
 
 **Extract from iOS App Store:**
@@ -86,19 +86,19 @@ web_test { action: "screenshot", url: "https://play.google.com/store/apps/detail
 Reddit blocks headless browsers directly. Use Yahoo Search to index Reddit threads:
 
 ```
-web_test { action: "content", url: "https://search.yahoo.com/search?p=site%3Areddit.com%2Fr%2FSwagBucks+survey+disqualified+banned+tracking" }
-web_test { action: "content", url: "https://search.yahoo.com/search?p=site%3Areddit.com%2Fr%2FSwagBucks+banned+deactivated+account" }
-web_test { action: "content", url: "https://search.yahoo.com/search?p=site%3Areddit.com%2Fr%2FSwagBucks+game+tracking+not+credited+offer" }
-web_test { action: "content", url: "https://search.yahoo.com/search?p=site%3Areddit.com%2Fr%2FSwagBucks+receipt+rejected+magic+receipts" }
-web_test { action: "content", url: "https://search.yahoo.com/search?p=site%3Areddit.com%2Fr%2FSwagBucks+customer+support+help+ticket" }
-web_test { action: "content", url: "https://search.yahoo.com/search?p=site%3Areddit.com%2Fr%2FSwagBucks+scam+not+worth+waste+time" }
+web_remote { action: "content", url: "https://search.yahoo.com/search?p=site%3Areddit.com%2Fr%2FSwagBucks+survey+disqualified+banned+tracking" }
+web_remote { action: "content", url: "https://search.yahoo.com/search?p=site%3Areddit.com%2Fr%2FSwagBucks+banned+deactivated+account" }
+web_remote { action: "content", url: "https://search.yahoo.com/search?p=site%3Areddit.com%2Fr%2FSwagBucks+game+tracking+not+credited+offer" }
+web_remote { action: "content", url: "https://search.yahoo.com/search?p=site%3Areddit.com%2Fr%2FSwagBucks+receipt+rejected+magic+receipts" }
+web_remote { action: "content", url: "https://search.yahoo.com/search?p=site%3Areddit.com%2Fr%2FSwagBucks+customer+support+help+ticket" }
+web_remote { action: "content", url: "https://search.yahoo.com/search?p=site%3Areddit.com%2Fr%2FSwagBucks+scam+not+worth+waste+time" }
 ```
 
 Also capture screenshots of the search results as evidence:
 
 ```
-web_test { action: "screenshot", url: "https://search.yahoo.com/search?p=site%3Areddit.com%2Fr%2FSwagBucks+survey+disqualified+banned+tracking", fullPage: true }
-web_test { action: "screenshot", url: "https://search.yahoo.com/search?p=site%3Areddit.com%2Fr%2FSwagBucks+banned+deactivated+account", fullPage: true }
+web_remote { action: "screenshot", url: "https://search.yahoo.com/search?p=site%3Areddit.com%2Fr%2FSwagBucks+survey+disqualified+banned+tracking", fullPage: true }
+web_remote { action: "screenshot", url: "https://search.yahoo.com/search?p=site%3Areddit.com%2Fr%2FSwagBucks+banned+deactivated+account", fullPage: true }
 ```
 
 **Extract from each Yahoo result:**
@@ -127,7 +127,7 @@ This confirms ratings, review content, and review breakdown bars visually match 
 
 ### 1D. Agent-Browser Deep Scraping (Optional — when config.deepScrape.enabled is true)
 
-When the user enables "Deep Scrape" in the setup config, use `agent-browser` to directly navigate Reddit threads and app store pages for richer evidence. This runs **alongside** the existing web_test scraping — it does NOT replace it.
+When the user enables "Deep Scrape" in the setup config, use `agent-browser` to directly navigate Reddit threads and app store pages for richer evidence. This runs **alongside** the existing web_remote scraping — it does NOT replace it.
 
 See [references/agent-browser-scraping.md](references/agent-browser-scraping.md) for detailed patterns.
 
@@ -170,7 +170,7 @@ agent-browser get text body > /tmp/thread_content.txt
 
 #### App Store Deep Review Scraping (when config.deepScrape.appStore is true)
 
-Navigate to the full reviews section of each app store to capture expanded reviews not visible in the initial web_test scrape:
+Navigate to the full reviews section of each app store to capture expanded reviews not visible in the initial web_remote scrape:
 
 ```bash
 # iOS App Store — navigate to reviews section
@@ -481,11 +481,11 @@ These are the known Swagbucks complaint categories to look for across all source
 ## Critical Rules
 
 1. **Only use verified data** — Never fabricate post titles, usernames, upvote counts, or review text
-2. **All screenshots must be real** — Captured live via `web_test` or `agent-browser`, never placeholder images
+2. **All screenshots must be real** — Captured live via `web_remote` or `agent-browser`, never placeholder images
 3. **Reddit workaround** — Use Yahoo Search indexing for discovery since Reddit blocks headless browsers. When deep scrape is enabled, use `agent-browser` to open actual Reddit threads for richer data and thread screenshots
 4. **Self-contained report** — All images embedded as base64, no external dependencies
 5. **Cross-reference everything** — Every claim should be checked against multiple sources
 6. **Note data limitations** — If a claim can't be verified, say so — don't assume
 7. **Timestamp the report** — Include capture date/time so data freshness is clear
-8. **Deep scrape is additive** — agent-browser deep scraping supplements, never replaces, the existing web_test flow. If agent-browser fails on a page (e.g., Reddit anti-bot), fall back gracefully to web_test data
+8. **Deep scrape is additive** — agent-browser deep scraping supplements, never replaces, the existing web_remote flow. If agent-browser fails on a page (e.g., Reddit anti-bot), fall back gracefully to web_remote data
 9. **Evidence selection** — When deep scraping, aim for a balanced view: capture both critical complaint posts AND positive testimonials to present fair, comprehensive evidence

@@ -4,7 +4,7 @@ This is the reference template for generating the Swagbucks validation report. T
 
 ## Build Process
 
-1. Capture all screenshots via `web_test`
+1. Capture all screenshots via `web_remote`
 2. Convert each to base64: `base64 -i /path/to/screenshot.png > /tmp/name_b64.txt`
 3. Use a bash heredoc script to inject base64 strings into the HTML template
 4. Write the final file to `~/Desktop/swagbucks-validation-report.html`

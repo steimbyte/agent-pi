@@ -1,7 +1,11 @@
-// ABOUTME: Web testing extension using Cloudflare Browser Rendering for screenshots, content extraction, and a11y.
-// ABOUTME: Registers /web-test command and web_test tool backed by a deployed Cloudflare Worker.
+// ABOUTME: Remote web testing extension using Cloudflare Browser Rendering for screenshots, content extraction, and a11y.
+// ABOUTME: Registers /web-remote command and web_remote tool backed by a deployed Cloudflare Worker.
+// ABOUTME: REMOTE ONLY — cannot access localhost, 127.0.0.1, or local network. Use agent-browser skill for local testing.
 /**
- * Web Test -- Cloudflare Browser Rendering powered web testing
+ * Web Remote -- Cloudflare Browser Rendering powered REMOTE web testing
+ *
+ * IMPORTANT: This is a REMOTE service. It CANNOT access localhost, 127.0.0.1,
+ * or any local network address. For local testing, use the agent-browser skill instead.
  *
  * Uses a deployed Cloudflare Worker (pi-web-test) with Browser Rendering
  * binding to provide headless browser capabilities:
@@ -15,13 +19,13 @@
  * so the agent can Read them to visually inspect pages.
  *
  * Commands:
- *   /web-test screenshot <url>          -- capture a screenshot
- *   /web-test content <url> [selector]  -- extract page content
- *   /web-test a11y <url>                -- accessibility audit
- *   /web-test responsive <url>          -- multi-viewport screenshots
+ *   /web-remote screenshot <url>          -- capture a screenshot
+ *   /web-remote content <url> [selector]  -- extract page content
+ *   /web-remote a11y <url>                -- accessibility audit
+ *   /web-remote responsive <url>          -- multi-viewport screenshots
  *
  * Tool:
- *   web_test                            -- programmatic access (agent can call)
+ *   web_remote                            -- programmatic access (agent can call)
  *
  * Prerequisites:
  *   - Cloudflare Worker deployed (auto-deployed on first use)
@@ -447,8 +451,8 @@ export default function (pi: ExtensionAPI) {
 
 	const ACTIONS = ["screenshot", "content", "a11y", "responsive"];
 
-	pi.registerCommand("web-test", {
-		description: "Test web pages using Cloudflare Browser Rendering (screenshot, content, a11y, responsive)",
+	pi.registerCommand("web-remote", {
+		description: "Test REMOTE web pages using Cloudflare Browser Rendering (screenshot, content, a11y, responsive). CANNOT access localhost — use agent-browser for local testing.",
 		getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
 			const items = ACTIONS.map(a => ({
 				value: a,
@@ -467,15 +471,16 @@ export default function (pi: ExtensionAPI) {
 
 			if (!action || !ACTIONS.includes(action)) {
 				ctx.ui.notify(
-					"Usage: /web-test <action> <url>\n" +
-					"Actions: screenshot, content, a11y, responsive",
+					"Usage: /web-remote <action> <url>\n" +
+					"Actions: screenshot, content, a11y, responsive\n" +
+					"NOTE: Remote only — cannot access localhost. Use agent-browser for local testing.",
 					"warning",
 				);
 				return;
 			}
 
 			if (!url) {
-				ctx.ui.notify(`Usage: /web-test ${action} <url>`, "warning");
+				ctx.ui.notify(`Usage: /web-remote ${action} <url>`, "warning");
 				return;
 			}
 
@@ -519,15 +524,19 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ── web_test tool ────────────────────────────
+	// ── web_remote tool ──────────────────────────
 
 	pi.registerTool({
-		name: "web_test",
-		label: "Web Test",
+		name: "web_remote",
+		label: "Web Remote",
 		description: [
-			"Test web pages using Cloudflare Browser Rendering.",
+			"Test REMOTE web pages using Cloudflare Browser Rendering.",
+			"IMPORTANT: This is a REMOTE service — it CANNOT access localhost, 127.0.0.1,",
+			"or any local network address. For localhost testing, use the agent-browser skill",
+			"(via Bash: agent-browser open <url>, agent-browser snapshot -i, etc.).",
+			"",
 			"Captures screenshots, extracts content, runs accessibility audits,",
-			"and tests responsive layouts via a headless Chromium browser.",
+			"and tests responsive layouts via a remote headless Chromium browser.",
 			"",
 			"Actions:",
 			"  screenshot  -- capture a PNG screenshot (returns file path for Read tool)",
@@ -632,7 +641,7 @@ export default function (pi: ExtensionAPI) {
 			const DIM = "\x1b[90m";
 			const BRIGHT = "\x1b[1;97m";
 			const RST = "\x1b[0m";
-			return new Text(`${DIM}web-test:${RST} ${BRIGHT}${p.action}${RST} ${DIM}${p.url}${RST}`, 0, 0);
+			return new Text(`${DIM}web-remote:${RST} ${BRIGHT}${p.action}${RST} ${DIM}${p.url}${RST}`, 0, 0);
 		},
 
 		renderResult(result, _options, _theme) {

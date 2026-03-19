@@ -1,6 +1,6 @@
 # Agent-Browser Deep Scraping Reference
 
-Detailed patterns for using `agent-browser` to deep-scrape Reddit threads and app store review pages for the Swagbucks analysis. This supplements the existing `web_test` scraping — it does NOT replace it.
+Detailed patterns for using `agent-browser` to deep-scrape Reddit threads and app store review pages for the Swagbucks analysis. This supplements the existing `web_remote` scraping — it does NOT replace it.
 
 ## Reddit Thread Scraping
 
@@ -239,10 +239,10 @@ If agent-browser fails to load a page (e.g., Reddit anti-bot, rate limiting):
 
 2. **If retry fails**, fall back gracefully:
    - Log the failure in the evidence section
-   - Use the web_test data from Phase 1A/1B instead
+   - Use the web_remote data from Phase 1A/1B instead
    - Note in the report: "Direct thread scraping unavailable — using search index data"
 
-3. **Never block the report** on deep scrape failures — the existing web_test data is always sufficient for a complete report
+3. **Never block the report** on deep scrape failures — the existing web_remote data is always sufficient for a complete report
 
 ## Output Format
 

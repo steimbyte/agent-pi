@@ -4,7 +4,7 @@
 
 URL: `https://apps.apple.com/us/app/swagbucks-surveys-for-money/id640439547`
 
-The `web_test content` response contains structured text. Key fields to extract:
+The `web_remote content` response contains structured text. Key fields to extract:
 
 ```
 148K RATINGS
@@ -59,7 +59,7 @@ Copyright: © [Year] [Company]
 
 URL: `https://play.google.com/store/apps/details?id=com.prodege.swagbucksmobile`
 
-The `web_test content` response contains:
+The `web_remote content` response contains:
 
 ```
 [App Name]
@@ -93,7 +93,7 @@ Updated on
 
 After extracting text, ALWAYS capture and read screenshots to verify:
 
-1. `web_test screenshot` with `fullPage: true`
+1. `web_remote screenshot` with `fullPage: true`
 2. `Read` the PNG file to visually confirm:
    - Rating numbers match extracted text
    - Star distribution bars (visual ratio)

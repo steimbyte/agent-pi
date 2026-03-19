@@ -518,7 +518,7 @@ Cloudflare Browser Rendering for headless browser testing.
 | Property | Value |
 |----------|-------|
 | **File** | `web-test.ts` (696 lines) + `web-test-worker/` |
-| **Tools** | `web_test` |
+| **Tools** | `web_remote` |
 | **Commands** | `/web-test <action> <url>` |
 | **Shortcuts** | — |
 | **Hooks** | — |

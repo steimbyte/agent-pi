@@ -1,10 +1,35 @@
 ---
 name: agent-browser
-description: Browser automation CLI for AI agents. Use when the user needs to interact with websites, including navigating pages, filling forms, clicking buttons, taking screenshots, extracting data, testing web apps, or automating any browser task. Triggers include requests to "open a website", "fill out a form", "click a button", "take a screenshot", "scrape data from a page", "test this web app", "login to a site", "automate browser actions", or any task requiring programmatic web interaction.
+description: LOCAL browser automation CLI for AI agents. The ONLY tool that can access localhost, 127.0.0.1, and local network URLs. Use for ALL browser tasks including testing local dev servers, navigating pages, filling forms, clicking buttons, taking screenshots, extracting data, testing web apps, and automation. Triggers include requests to "open a website", "test localhost", "fill out a form", "click a button", "take a screenshot", "scrape data from a page", "test this web app", "test my local server", "login to a site", "automate browser actions", or any task requiring programmatic web interaction.
 allowed-tools: Bash(agent-browser:*)
 ---
 
 # Browser Automation with agent-browser
+
+## When to Use This Skill (IMPORTANT)
+
+`agent-browser` is a **LOCAL browser** — it runs directly on this machine using a real Chromium instance. It can access:
+
+- **localhost** / **127.0.0.1** (local dev servers, local APIs)
+- **Local network IPs** (192.168.x.x, 10.x.x.x, etc.)
+- **Any remote URL** (https://example.com, etc.)
+- **Local files** (file:///path/to/file.html)
+
+### DO NOT use `web_remote` for localhost testing
+
+The `web_remote` tool (formerly `web_test`) is a **remote service** powered by Cloudflare Browser Rendering. It runs on Cloudflare's servers and **CANNOT reach localhost, 127.0.0.1, or any local network address**. It will fail silently or error on local URLs.
+
+| Scenario | Use This | NOT This |
+|----------|----------|----------|
+| Test localhost:3000 | `agent-browser` | ~~web_remote~~ |
+| Test 127.0.0.1:8080 | `agent-browser` | ~~web_remote~~ |
+| Test local network device | `agent-browser` | ~~web_remote~~ |
+| Fill forms, click buttons | `agent-browser` | ~~web_remote~~ |
+| Multi-step browser workflow | `agent-browser` | ~~web_remote~~ |
+| Screenshot a public site (quick, no interaction) | `agent-browser` or `web_remote` | — |
+| Accessibility audit of public site | `agent-browser` or `web_remote` | — |
+
+**Rule of thumb:** Always prefer `agent-browser`. Use `web_remote` only when you need a quick remote screenshot/a11y audit and don't need any interaction.
 
 ## Core Workflow
 

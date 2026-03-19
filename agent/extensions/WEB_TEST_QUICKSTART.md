@@ -1,8 +1,10 @@
-# Web Test Extension - Quick Start
+# Web Remote Extension - Quick Start
 
 ## What's Included
 
-A complete web testing extension for Pi that captures screenshots, extracts content, checks accessibility, and tests responsive layouts using Cloudflare's Browser Rendering.
+A REMOTE web testing extension for Pi that captures screenshots, extracts content, checks accessibility, and tests responsive layouts using Cloudflare's Browser Rendering.
+
+**IMPORTANT:** This is a remote service — it CANNOT access localhost, 127.0.0.1, or local network addresses. For localhost testing, use the `agent-browser` skill instead.
 
 ## Quick Start
 
@@ -25,24 +27,31 @@ npm run deploy
 
 **Via Commands:**
 ```bash
-/web-test screenshot https://example.com
-/web-test content https://example.com
-/web-test a11y https://example.com
+/web-remote screenshot https://example.com
+/web-remote content https://example.com
+/web-remote a11y https://example.com
 ```
 
 **Via AI Tool:**
 ```
 Ask: "Take a screenshot of example.com and describe it"
-The AI will use the web_test tool automatically.
+The AI will use the web_remote tool automatically.
+```
+
+**For localhost testing, use agent-browser:**
+```bash
+agent-browser open http://localhost:3000
+agent-browser snapshot -i
+agent-browser screenshot
 ```
 
 ## Command Reference
 
 ```
-/web-test screenshot <url>     - Capture full page screenshot
-/web-test content <url>        - Extract HTML and text
-/web-test a11y <url>           - Check accessibility violations
-/web-test responsive <url>     - Test responsive layouts
+/web-remote screenshot <url>     - Capture full page screenshot
+/web-remote content <url>        - Extract HTML and text
+/web-remote a11y <url>           - Check accessibility violations
+/web-remote responsive <url>     - Test responsive layouts
 ```
 
 ## File Locations
@@ -70,7 +79,7 @@ The AI will use the web_test tool automatically.
 
 ## API Documentation
 
-### web_test Tool (for AI)
+### web_remote Tool (for AI)
 
 ```typescript
 {
