@@ -4,7 +4,7 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { Server } from "node:http";
 
-export type ActiveViewerKind = "file" | "plan" | "questions" | "spec" | "report" | "sounds";
+export type ActiveViewerKind = "file" | "plan" | "questions" | "spec" | "report" | "sounds" | "qa" | "setup";
 
 export interface ActiveViewerSession {
 	kind: ActiveViewerKind;
