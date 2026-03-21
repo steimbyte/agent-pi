@@ -140,13 +140,40 @@ function printLocalInfo(url: string, pin: string): void {
 	w("\n");
 }
 
+// 5-row bitmap font for digits 0-9 (each char is 4 cols wide + 1 space)
+const BIG_DIGITS: Record<string, string[]> = {
+	"0": ["█▀▀█", "█  █", "█  █", "█  █", "█▄▄█"],
+	"1": [" ▄█ ", "  █ ", "  █ ", "  █ ", " ▄█▄"],
+	"2": ["█▀▀█", "   █", " ▄▄█", "█   ", "█▄▄▄"],
+	"3": ["█▀▀█", "   █", " ▀▀█", "   █", "█▄▄█"],
+	"4": ["█  █", "█  █", "█▄▄█", "   █", "   █"],
+	"5": ["█▀▀▀", "█   ", "█▀▀█", "   █", "█▄▄█"],
+	"6": ["█▀▀█", "█   ", "█▀▀█", "█  █", "█▄▄█"],
+	"7": ["█▀▀█", "   █", "  █ ", " █  ", " █  "],
+	"8": ["█▀▀█", "█  █", "█▀▀█", "█  █", "█▄▄█"],
+	"9": ["█▀▀█", "█  █", "█▄▄█", "   █", "█▄▄█"],
+};
+
+function renderBigPin(pin: string): string {
+	const rows: string[] = ["", "", "", "", ""];
+	for (const ch of pin) {
+		const glyph = BIG_DIGITS[ch];
+		if (!glyph) continue;
+		for (let r = 0; r < 5; r++) {
+			rows[r] += glyph[r] + "  ";
+		}
+	}
+	return rows.map((r) => `    ${r}`).join("\n");
+}
+
 function printRemoteQRBlock(qr: string, url: string, pin: string): void {
 	const w = process.stderr.write.bind(process.stderr);
-	w("\n\n\n\n");
+	w("\n\n\n\n\n\n");
 	w(qr);
 	w("\n\n\n\n");
-	w(`  ${url}\n`);
-	w(`  \x1b[1mPIN: ${pin}\x1b[0m\n`);
+	w(`  ${url}\n\n`);
+	w(`  \x1b[1mPIN:\x1b[0m\n\n`);
+	w(`\x1b[1m${renderBigPin(pin)}\x1b[0m\n`);
 	w("\n\n");
 }
 
