@@ -264,6 +264,23 @@ class SessionBridge {
 	}
 
 	onMessageEnd(message: any): void {
+		// Diagnostic — write to file so it doesn't pollute terminal
+		try {
+			const fs = require("node:fs");
+			const info = {
+				role: message?.role,
+				contentType: typeof message?.content,
+				isArray: Array.isArray(message?.content),
+				contentLength: Array.isArray(message?.content) ? message.content.length : 0,
+				types: Array.isArray(message?.content) ? message.content.map((p: any) => p.type) : [],
+				textParts: Array.isArray(message?.content) ? message.content.filter((p: any) => p.type === "text").map((p: any) => (p.text || "").slice(0, 50)) : [],
+				bufferLength: this.textBuffer.length,
+				bufferPreview: this.textBuffer.join("").slice(0, 50),
+				clients: this.clients.size,
+			};
+			fs.appendFileSync("/tmp/web-chat-debug.log", JSON.stringify(info) + "\n");
+		} catch {}
+
 		// Extract text from the completed message
 		let fullText = "";
 		if (message?.content) {
