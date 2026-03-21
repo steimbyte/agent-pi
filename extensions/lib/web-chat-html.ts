@@ -896,11 +896,25 @@ export function generateWebChatHTML(opts: { port: number; logoDataUri?: string }
     eventSource.addEventListener('assistant_message', (e) => {
       const data = JSON.parse(e.data);
       if (welcomeEl) welcomeEl.style.display = 'none';
-      const div = document.createElement('div'); div.className = 'message';
-      div.innerHTML = '<div class="message-label assistant-label">Pi</div>' +
-        '<div class="message-bubble assistant-bubble">' + renderMarkdown(data.content) + '</div>' +
-        '<div class="message-time">' + formatTime(data.timestamp) + '</div>';
-      messagesEl.appendChild(div); scrollToBottom(true);
+      hideThinking();
+      // If there's an active stream bubble, replace it with the final content
+      if (currentStreamBubble) {
+        currentStreamBubble.innerHTML = renderMarkdown(data.content);
+        const timeDiv = document.createElement('div');
+        timeDiv.className = 'message-time';
+        timeDiv.textContent = formatTime(data.timestamp);
+        currentStreamBubble.parentElement.appendChild(timeDiv);
+        currentStreamBubble = null; currentStreamText = '';
+      } else {
+        // No stream was active — create a fresh message
+        const div = document.createElement('div'); div.className = 'message';
+        div.innerHTML = '<div class="message-label assistant-label">Pi</div>' +
+          '<div class="message-bubble assistant-bubble">' + renderMarkdown(data.content) + '</div>' +
+          '<div class="message-time">' + formatTime(data.timestamp) + '</div>';
+        messagesEl.appendChild(div);
+      }
+      setBusy(false);
+      scrollToBottom(true);
     });
     eventSource.addEventListener('text_delta', (e) => {
       hideThinking(); appendToStream(JSON.parse(e.data).text);

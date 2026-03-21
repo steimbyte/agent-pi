@@ -229,9 +229,41 @@ class SessionBridge {
 
 	onAgentEnd(): void {
 		this.busy = false;
+		this.pendingFromPhone = false;
+		broadcastSSE(this.clients, "status", { busy: false });
+	}
 
-		// Finalize assistant message from buffered text
-		const fullText = this.textBuffer.join("");
+	onMessageUpdate(event: MessageUpdateEvent): void {
+		const delta = event.assistantMessageEvent;
+		if (!delta) return;
+
+		// Stream text deltas to phone in real-time
+		if (delta.type === "text_delta") {
+			const text = (delta as any).delta || "";
+			this.textBuffer.push(text);
+			broadcastSSE(this.clients, "text_delta", { text });
+		}
+	}
+
+	onMessageEnd(message: any): void {
+		// Extract the full text from the completed message
+		let fullText = "";
+		if (message?.content) {
+			if (Array.isArray(message.content)) {
+				fullText = message.content
+					.filter((p: any) => p.type === "text")
+					.map((p: any) => p.text || "")
+					.join("");
+			} else if (typeof message.content === "string") {
+				fullText = message.content;
+			}
+		}
+
+		if (!fullText) {
+			// Maybe text was in the buffer from text_delta events
+			fullText = this.textBuffer.join("");
+		}
+
 		if (fullText) {
 			const assistantMsg: ChatMessage = {
 				role: "assistant",
@@ -240,49 +272,19 @@ class SessionBridge {
 				toolCalls: this.toolNames.length > 0 ? [...this.toolNames] : undefined,
 			};
 			this.history.push(assistantMsg);
+
+			// ALWAYS send the complete message — this is the reliable delivery
+			broadcastSSE(this.clients, "assistant_message", assistantMsg);
 		}
+
+		// Signal completion
+		broadcastSSE(this.clients, "done", {});
+		broadcastSSE(this.clients, "status", { busy: false });
+		this.busy = false;
+
+		// Reset buffers
 		this.textBuffer = [];
 		this.toolNames = [];
-		this.pendingFromPhone = false;
-
-		broadcastSSE(this.clients, "done", { toolCount: this.toolNames.length });
-		broadcastSSE(this.clients, "status", { busy: false });
-	}
-
-	onMessageUpdate(event: MessageUpdateEvent): void {
-		const delta = event.assistantMessageEvent;
-		if (!delta) return;
-		if (delta.type === "text_delta") {
-			const text = (delta as any).delta || "";
-			this.textBuffer.push(text);
-			broadcastSSE(this.clients, "text_delta", { text });
-		} else if (delta.type === "text_end") {
-			// Full text block finished — use as fallback if streaming missed
-			const fullText = (delta as any).content || "";
-			if (fullText && this.textBuffer.length === 0) {
-				// Streaming missed — send full text at once
-				this.textBuffer.push(fullText);
-				broadcastSSE(this.clients, "text_delta", { text: fullText });
-			}
-		}
-	}
-
-	onMessageEnd(message: any): void {
-		// Fallback: if we never got text_delta but the message has content, send it
-		if (this.textBuffer.length === 0 && message) {
-			const content = message.content;
-			if (Array.isArray(content)) {
-				for (const part of content) {
-					if (part.type === "text" && part.text) {
-						this.textBuffer.push(part.text);
-						broadcastSSE(this.clients, "text_delta", { text: part.text });
-					}
-				}
-			} else if (typeof content === "string" && content) {
-				this.textBuffer.push(content);
-				broadcastSSE(this.clients, "text_delta", { text: content });
-			}
-		}
 	}
 
 	onToolStart(event: ToolExecutionStartEvent): void {
