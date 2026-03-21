@@ -132,15 +132,21 @@ function generateQRString(url: string): Promise<string> {
 	});
 }
 
-function printQRBlock(qr: string, url: string, pin: string): void {
+function printLocalInfo(url: string, pin: string): void {
 	const w = process.stderr.write.bind(process.stderr);
-	w("\n\n");
-	w(qr);
-	w("\n\n");
-	w(`  URL:  ${url}\n`);
-	w(`  PIN:  ${pin}\n`);
 	w("\n");
-	w(`  Scan QR with phone camera. One device at a time.\n`);
+	w(`  ${url}\n`);
+	w(`  \x1b[1mPIN: ${pin}\x1b[0m\n`);
+	w("\n");
+}
+
+function printRemoteQRBlock(qr: string, url: string, pin: string): void {
+	const w = process.stderr.write.bind(process.stderr);
+	w("\n\n\n\n");
+	w(qr);
+	w("\n\n\n\n");
+	w(`  ${url}\n`);
+	w(`  \x1b[1mPIN: ${pin}\x1b[0m\n`);
 	w("\n\n");
 }
 
@@ -802,8 +808,7 @@ export default function (pi: ExtensionAPI) {
 			const { localUrl, lanUrl, pin } = await launchChat(ctx);
 			openBrowser(localUrl);
 
-			const qr = await generateQRString(lanUrl);
-			printQRBlock(qr, lanUrl, pin);
+			printLocalInfo(lanUrl, pin);
 
 			return {
 				content: [{
@@ -815,7 +820,6 @@ export default function (pi: ExtensionAPI) {
 						`Phone:  ${lanUrl}`,
 						`PIN:    ${pin}`,
 						``,
-						`Scan the QR code in the terminal with your phone camera.`,
 						`Only one device can be authenticated at a time.`,
 						``,
 						`  /chat            -- reopen/restart the chat`,
@@ -872,13 +876,12 @@ export default function (pi: ExtensionAPI) {
 				const { localUrl, lanUrl, pin, tunnelUrl } = await launchChat(ctx, remote);
 				openBrowser(localUrl);
 
-				const phoneUrl = tunnelUrl || lanUrl;
-				const qr = await generateQRString(phoneUrl);
-				printQRBlock(qr, phoneUrl, pin);
-
-				if (tunnelUrl) {
+				if (remote && tunnelUrl) {
+					const qr = await generateQRString(tunnelUrl);
+					printRemoteQRBlock(qr, tunnelUrl, pin);
 					ctx.ui.notify(`Web Chat → ${tunnelUrl} PIN: ${pin}`, "success");
 				} else {
+					printLocalInfo(lanUrl, pin);
 					ctx.ui.notify(`Web Chat → ${lanUrl} PIN: ${pin}`, "success");
 				}
 			} catch (err: any) {
