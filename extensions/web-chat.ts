@@ -227,7 +227,16 @@ class SessionBridge {
 		broadcastSSE(this.clients, "user_message", userMsg);
 
 		// Inject into main Pi session — this triggers a turn
-		this.piApi.sendUserMessage(text);
+		// Use deliverAs: "followUp" so it works even when the agent is busy
+		try {
+			this.piApi.sendUserMessage(text, { deliverAs: "followUp" });
+		} catch (err: any) {
+			console.error(`[web-chat] sendUserMessage error: ${err?.message}`);
+			broadcastSSE(this.clients, "error_event", {
+				message: "Failed to send message: " + (err?.message || "Unknown error"),
+			});
+			this.busy = false;
+		}
 	}
 
 	// ── Event handlers (called from pi.on() hooks) ──
