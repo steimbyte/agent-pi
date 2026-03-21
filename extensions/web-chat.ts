@@ -276,22 +276,12 @@ class SessionBridge {
 	}
 
 	onMessageEnd(message: any): void {
-		// Diagnostic — writes to file, not terminal (remove once stable)
-		try {
-			const fs = require("node:fs");
-			const info = {
-				ts: new Date().toISOString(),
-				role: message?.role,
-				isArray: Array.isArray(message?.content),
-				types: Array.isArray(message?.content) ? message.content.map((p: any) => p.type) : [],
-				textParts: Array.isArray(message?.content) ? message.content.filter((p: any) => p.type === "text").map((p: any) => (p.text || "").slice(0, 80)) : [],
-				buffer: this.textBuffer.join("").slice(0, 80),
-				clients: this.clients.size,
-			};
-			fs.appendFileSync("/tmp/web-chat-debug.log", JSON.stringify(info) + "\n");
-		} catch {}
+		// Only process assistant messages — user, toolResult, and custom
+		// messages were causing premature done/busy-false signals that
+		// killed the stream before the real response arrived.
+		if (message?.role !== "assistant") return;
 
-		// Extract text from the completed message
+		// Extract text from the completed assistant message
 		let fullText = "";
 		if (message?.content) {
 			if (Array.isArray(message.content)) {
@@ -322,14 +312,11 @@ class SessionBridge {
 			broadcastSSE(this.clients, "assistant_message", assistantMsg);
 		}
 
-		// ALWAYS signal completion — matches the working version.
-		// This fires for every message (including tool-use), which resets
-		// the phone's busy state. The phone handles this gracefully.
-		broadcastSSE(this.clients, "done", {});
-		broadcastSSE(this.clients, "status", { busy: false });
-		this.busy = false;
+		// Clear buffer for next message's deltas.
+		// Do NOT send done/status here — agent_end handles final completion.
+		// Sending done here caused premature stream finalization when
+		// multiple messages fire per turn (tool-use + text).
 		this.textBuffer = [];
-		this.toolNames = [];
 	}
 
 	onToolStart(event: ToolExecutionStartEvent): void {
