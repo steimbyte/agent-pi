@@ -46,6 +46,62 @@ function getLanIP(): string {
 	return "0.0.0.0";
 }
 
+// ── Cloudflare Tunnel ────────────────────────────────────────────────
+
+function isCloudflaredAvailable(): boolean {
+	try {
+		execSync("which cloudflared", { stdio: "ignore" });
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function startTunnel(localPort: number): Promise<{ url: string; proc: ChildProcess }> {
+	return new Promise((resolve, reject) => {
+		const proc = spawn("cloudflared", ["tunnel", "--url", `http://127.0.0.1:${localPort}`], {
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+
+		let resolved = false;
+		const timeout = setTimeout(() => {
+			if (!resolved) {
+				resolved = true;
+				reject(new Error("Tunnel failed to start within 15 seconds"));
+			}
+		}, 15000);
+
+		// cloudflared prints the URL to stderr
+		let stderrBuf = "";
+		proc.stderr!.setEncoding("utf-8");
+		proc.stderr!.on("data", (chunk: string) => {
+			stderrBuf += chunk;
+			const match = stderrBuf.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+			if (match && !resolved) {
+				resolved = true;
+				clearTimeout(timeout);
+				resolve({ url: match[0], proc });
+			}
+		});
+
+		proc.on("error", (err) => {
+			if (!resolved) {
+				resolved = true;
+				clearTimeout(timeout);
+				reject(err);
+			}
+		});
+
+		proc.on("close", (code) => {
+			if (!resolved) {
+				resolved = true;
+				clearTimeout(timeout);
+				reject(new Error(`cloudflared exited with code ${code}`));
+			}
+		});
+	});
+}
+
 // ── PIN Authentication ───────────────────────────────────────────────
 
 function generatePIN(): string {
@@ -183,6 +239,8 @@ function discoverProjects(): ProjectDir[] {
 
 // ── Agent Process Manager ────────────────────────────────────────────
 
+const TERMINAL_BUFFER_MAX = 200;
+
 class AgentBridge {
 	private proc: ChildProcess | null = null;
 	private sessionFile: string;
@@ -192,11 +250,24 @@ class AgentBridge {
 	private textBuffer: string[] = [];
 	private toolNames: string[] = [];
 	private cwd: string;
+	private terminalLines: string[] = [];
 
 	constructor(sessionId: string, clients: Map<number, SSEClient>, cwd?: string) {
 		this.sessionFile = getSessionFile(sessionId);
 		this.clients = clients;
 		this.cwd = cwd || process.cwd();
+	}
+
+	getTerminalHistory(): string[] {
+		return this.terminalLines;
+	}
+
+	private pushTerminalLine(line: string): void {
+		this.terminalLines.push(line);
+		if (this.terminalLines.length > TERMINAL_BUFFER_MAX) {
+			this.terminalLines.shift();
+		}
+		broadcastSSE(this.clients, "terminal_output", { line });
 	}
 
 	isBusy(): boolean {
@@ -259,19 +330,6 @@ class AgentBridge {
 		broadcastSSE(this.clients, "user_message", userMsg);
 		broadcastSSE(this.clients, "status", { busy: true });
 
-		const extDir = fileURLToPath(new URL(".", import.meta.url));
-		const tasksExt = join(extDir, "tasks.ts");
-		const footerExt = join(extDir, "footer.ts");
-		const memoryCycleExt = join(extDir, "memory-cycle.ts");
-
-		// Check if commander is available
-		const commanderAvail = !!(globalThis as any).__piCommanderClient;
-		const extensions = ["-e", tasksExt, "-e", footerExt, "-e", memoryCycleExt];
-		if (commanderAvail) {
-			const commanderExt = join(extDir, "commander-mcp.ts");
-			extensions.push("-e", commanderExt);
-		}
-
 		// Build the final message, prepending mode context if not NORMAL
 		let finalMessage = message;
 		if (mode && mode !== "NORMAL") {
@@ -286,13 +344,12 @@ class AgentBridge {
 			finalMessage = `${instruction}\n\n${message}`;
 		}
 
+		// Full orchestration mode — load all extensions and tools, no restrictions.
+		// The subprocess gets the same capabilities as the main Pi session.
 		const args = [
 			"--mode", "json",
 			"-p",
 			"--session", this.sessionFile,
-			"--no-extensions",
-			...extensions,
-			"--tools", "read,bash,edit,write,grep,find,ls",
 			"--thinking", "off",
 			finalMessage,
 		];
@@ -319,7 +376,11 @@ class AgentBridge {
 
 			proc.stderr!.setEncoding("utf-8");
 			proc.stderr!.on("data", (chunk: string) => {
-				// Stderr is informational, ignore silently
+				// Stream stderr to terminal view
+				const lines = chunk.split("\n");
+				for (const line of lines) {
+					if (line.trim()) this.pushTerminalLine(line);
+				}
 			});
 
 			proc.on("close", (code) => {
@@ -374,8 +435,15 @@ class AgentBridge {
 				const toolName = event.toolName || event.tool_name || "tool";
 				this.toolNames.push(toolName);
 				broadcastSSE(this.clients, "tool_start", { name: toolName });
+				this.pushTerminalLine(`▶ ${toolName}`);
 			} else if (type === "tool_execution_end") {
 				broadcastSSE(this.clients, "tool_end", {});
+				this.pushTerminalLine(`✓ tool done`);
+			}
+
+			// Forward raw event type to terminal for visibility
+			if (type && type !== "message_update") {
+				this.pushTerminalLine(`[${type}] ${JSON.stringify(event).slice(0, 200)}`);
 			}
 		} catch {}
 	}
@@ -524,6 +592,11 @@ function startChatServer(
 					sendSSE(client, msg.role === "user" ? "user_message" : "assistant_message", msg);
 				}
 
+				// Send existing terminal history
+				for (const line of bridge.getTerminalHistory()) {
+					sendSSE(client, "terminal_output", { line });
+				}
+
 				// Keep-alive ping every 30s
 				const pingInterval = setInterval(() => {
 					try { res.write(":ping\n\n"); } catch {}
@@ -572,6 +645,13 @@ function startChatServer(
 					historyCount: bridge.getHistory().length,
 					clients: sseClients.size,
 				}));
+				return;
+			}
+
+			// ── Terminal History ──────────────────────────────────
+			if (req.method === "GET" && url.pathname === "/terminal") {
+				res.writeHead(200, { "Content-Type": "application/json" });
+				res.end(JSON.stringify({ lines: bridge.getTerminalHistory() }));
 				return;
 			}
 
@@ -678,6 +758,8 @@ const ShowChatParams = Type.Object({
 
 export default function (pi: ExtensionAPI) {
 	let activeServer: Server | null = null;
+	let activeTunnel: ChildProcess | null = null;
+	let activeTunnelUrl: string | null = null;
 	let activeSession: {
 		kind: "chat";
 		title: string;
@@ -687,6 +769,12 @@ export default function (pi: ExtensionAPI) {
 	} | null = null;
 
 	function cleanupServer() {
+		// Kill tunnel first
+		if (activeTunnel) {
+			try { activeTunnel.kill(); } catch {}
+			activeTunnel = null;
+			activeTunnelUrl = null;
+		}
 		const server = activeServer;
 		activeServer = null;
 		if (server) {
@@ -702,12 +790,24 @@ export default function (pi: ExtensionAPI) {
 
 	let currentPIN = "";
 
-	async function launchChat(ctx: ExtensionContext): Promise<{ localUrl: string; lanUrl: string; pin: string }> {
+	interface LaunchResult {
+		localUrl: string;
+		lanUrl: string;
+		pin: string;
+		tunnelUrl?: string;
+	}
+
+	async function launchChat(ctx: ExtensionContext, remote = false): Promise<LaunchResult> {
 		cleanupServer();
 
 		currentPIN = generatePIN();
 		const { port, server } = await startChatServer(currentPIN, () => {
-			// Called when server auto-shuts down
+			// Called when server auto-shuts down — kill tunnel too
+			if (activeTunnel) {
+				try { activeTunnel.kill(); } catch {}
+				activeTunnel = null;
+				activeTunnelUrl = null;
+			}
 			activeServer = null;
 			if (activeSession) {
 				clearActiveViewer(activeSession);
@@ -720,10 +820,31 @@ export default function (pi: ExtensionAPI) {
 		const localUrl = `http://127.0.0.1:${port}`;
 		const lanUrl = `http://${lanIP}:${port}`;
 
+		let tunnelUrl: string | undefined;
+
+		// Start cloudflared tunnel if --remote
+		if (remote) {
+			if (!isCloudflaredAvailable()) {
+				throw new Error(
+					"cloudflared is not installed. Install it with: brew install cloudflared"
+				);
+			}
+			const tunnel = await startTunnel(port);
+			activeTunnel = tunnel.proc;
+			activeTunnelUrl = tunnel.url;
+			tunnelUrl = tunnel.url;
+
+			// Clean up tunnel if it dies unexpectedly
+			tunnel.proc.on("close", () => {
+				activeTunnel = null;
+				activeTunnelUrl = null;
+			});
+		}
+
 		activeSession = {
 			kind: "chat",
 			title: "Web Chat",
-			url: localUrl,
+			url: tunnelUrl || localUrl,
 			server,
 			onClose: () => {
 				activeServer = null;
@@ -733,7 +854,7 @@ export default function (pi: ExtensionAPI) {
 		registerActiveViewer(activeSession);
 		notifyViewerOpen(ctx, activeSession);
 
-		return { localUrl, lanUrl, pin: currentPIN };
+		return { localUrl, lanUrl, pin: currentPIN, tunnelUrl };
 	}
 
 	// ── show_chat tool ───────────────────────────────────────────────
@@ -744,7 +865,7 @@ export default function (pi: ExtensionAPI) {
 		description:
 			"Open a web-based chat interface accessible from your phone or any device on the local network. " +
 			"Starts an HTTP server on 0.0.0.0 (LAN-accessible) with a mobile-friendly chat UI. " +
-			"The chat spawns a Pi agent subprocess with full tool access (read, bash, edit, write, grep, find, ls). " +
+			"The chat spawns a Pi agent subprocess with full orchestration capabilities. " +
 			"The server stays running in the background — close it with /chat stop.",
 		parameters: ShowChatParams,
 
@@ -766,8 +887,9 @@ export default function (pi: ExtensionAPI) {
 						`Open the "Phone" URL on any device connected to the same WiFi.`,
 						`Enter the PIN to authenticate. Server auto-closes when all clients disconnect.`,
 						``,
-						`  /chat       — reopen/restart the chat`,
-						`  /chat stop  — shut down the server`,
+						`  /chat            — reopen/restart the chat`,
+						`  /chat --remote   — open with secure tunnel (accessible from anywhere)`,
+						`  /chat stop       — shut down the server`,
 					].join("\n"),
 				}],
 			};
@@ -793,14 +915,20 @@ export default function (pi: ExtensionAPI) {
 	// ── /chat command ────────────────────────────────────────────────
 
 	pi.registerCommand("chat", {
-		description: "Open web chat interface (use '/chat stop' to shut down)",
+		description: "Open web chat interface (use '/chat stop' to shut down, '/chat --remote' for tunnel)",
 		handler: async (args, ctx) => {
 			const trimmed = args.trim().toLowerCase();
 
 			if (trimmed === "stop") {
 				if (activeServer) {
+					const hadTunnel = !!activeTunnel;
 					cleanupServer();
-					ctx.ui.notify("Web chat server stopped.", "info");
+					ctx.ui.notify(
+						hadTunnel
+							? "Web chat server and tunnel stopped."
+							: "Web chat server stopped.",
+						"info",
+					);
 				} else {
 					ctx.ui.notify("No web chat server is running.", "warning");
 				}
@@ -812,9 +940,26 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			const { localUrl, lanUrl, pin } = await launchChat(ctx);
-			openBrowser(localUrl);
-			ctx.ui.notify(`Web Chat live → ${lanUrl} PIN: ${pin}`, "success");
+			const remote = trimmed === "--remote" || trimmed === "-r" || trimmed === "remote";
+
+			try {
+				const { localUrl, lanUrl, pin, tunnelUrl } = await launchChat(ctx, remote);
+				openBrowser(localUrl);
+
+				if (tunnelUrl) {
+					ctx.ui.notify(
+						`Web Chat live → ${tunnelUrl} PIN: ${pin}`,
+						"success",
+					);
+				} else {
+					ctx.ui.notify(
+						`Web Chat live → ${lanUrl} PIN: ${pin}`,
+						"success",
+					);
+				}
+			} catch (err: any) {
+				ctx.ui.notify(err?.message || "Failed to start chat", "error");
+			}
 		},
 	});
 

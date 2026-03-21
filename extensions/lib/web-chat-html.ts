@@ -409,6 +409,37 @@ export function generateWebChatHTML(opts: { port: number; logoDataUri?: string }
   }
 
   /* ── Mode Bar ─────────────────────────────────────── */
+  /* ── View Tabs ─────────────────────────────────────── */
+  #view-tabs {
+    display: flex; gap: 0; flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .view-tab {
+    flex: 1; padding: 8px 0; border: none; background: none;
+    color: var(--text-muted); font-size: 13px; font-weight: 600;
+    font-family: var(--font); cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+  }
+  .view-tab:hover { color: var(--text); }
+  .view-tab.active { color: var(--blue-bright); border-bottom-color: var(--blue); }
+
+  /* ── Terminal View ────────────────────────────────── */
+  #terminal-view {
+    display: none; flex: 1; overflow-y: auto;
+    padding: 12px 16px; background: #050810;
+  }
+  #terminal-view.visible { display: block; }
+  #terminal-output {
+    font-family: var(--mono); font-size: 12px; line-height: 1.6;
+    color: var(--text-muted); white-space: pre-wrap; word-break: break-all;
+    margin: 0;
+  }
+  #terminal-output .t-tool { color: var(--blue-bright); }
+  #terminal-output .t-done { color: var(--success); }
+  #terminal-output .t-event { color: var(--text-dim); }
+
   #mode-bar {
     display: none; padding: 4px 16px;
     margin: 8px 16px 0; border-radius: var(--radius);
@@ -459,8 +490,17 @@ export function generateWebChatHTML(opts: { port: number; logoDataUri?: string }
       </div>
     </div>
 
+    <div id="view-tabs">
+      <button class="view-tab active" id="tab-chat" onclick="switchView('chat')">Chat</button>
+      <button class="view-tab" id="tab-terminal" onclick="switchView('terminal')">Terminal</button>
+    </div>
+
     <div id="mode-bar"></div>
     <div class="connection-banner" id="conn-banner">Connection lost. Reconnecting...</div>
+
+    <div id="terminal-view">
+      <pre id="terminal-output"></pre>
+    </div>
 
     <div id="messages">
       <div class="welcome" id="welcome">
@@ -603,6 +643,40 @@ export function generateWebChatHTML(opts: { port: number; logoDataUri?: string }
   const statusDot = document.getElementById('status-dot');
   const connBanner = document.getElementById('conn-banner');
   const welcomeEl = document.getElementById('welcome');
+  const terminalView = document.getElementById('terminal-view');
+  const terminalOutput = document.getElementById('terminal-output');
+  const tabChat = document.getElementById('tab-chat');
+  const tabTerminal = document.getElementById('tab-terminal');
+  const inputArea = document.getElementById('input-area');
+  let currentView = 'chat';
+
+  window.switchView = function(view) {
+    currentView = view;
+    tabChat.classList.toggle('active', view === 'chat');
+    tabTerminal.classList.toggle('active', view === 'terminal');
+    messagesEl.style.display = view === 'chat' ? '' : 'none';
+    inputArea.style.display = view === 'chat' ? '' : 'none';
+    terminalView.classList.toggle('visible', view === 'terminal');
+    if (view === 'terminal') {
+      terminalView.scrollTop = terminalView.scrollHeight;
+    }
+  };
+
+  function appendTerminalLine(line) {
+    const span = document.createElement('div');
+    if (line.startsWith('▶ ')) {
+      span.className = 't-tool';
+    } else if (line.startsWith('✓ ')) {
+      span.className = 't-done';
+    } else {
+      span.className = 't-event';
+    }
+    span.textContent = line;
+    terminalOutput.appendChild(span);
+    if (currentView === 'terminal') {
+      terminalView.scrollTop = terminalView.scrollHeight;
+    }
+  }
 
   // ── Slash Command Menu ───────────────────────────────
   const SLASH_COMMANDS = [
@@ -947,10 +1021,14 @@ export function generateWebChatHTML(opts: { port: number; logoDataUri?: string }
     eventSource.addEventListener('dir_changed', (e) => {
       const data = JSON.parse(e.data); currentCwd = data.cwd || ''; updateDirPill(data.name);
     });
+    eventSource.addEventListener('terminal_output', (e) => {
+      appendTerminalLine(JSON.parse(e.data).line);
+    });
     eventSource.addEventListener('reset', () => {
       messagesEl.innerHTML = '';
       if (welcomeEl) { messagesEl.appendChild(welcomeEl); welcomeEl.style.display = ''; }
       currentStreamBubble = null; currentStreamText = ''; setBusy(false);
+      terminalOutput.innerHTML = '';
     });
     eventSource.onerror = () => {
       connected = false; updateStatusDot(); connBanner.classList.add('visible');
