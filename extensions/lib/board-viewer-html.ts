@@ -644,6 +644,38 @@ export function generateBoardViewerHTML(opts: BoardViewerOptions): string {
     max-width: 400px;
   }
 
+  /* ── Local Mode Banner ───────────────── */
+  .local-mode-banner {
+    display: none;
+    background: rgba(240, 180, 41, 0.1);
+    border-bottom: 1px solid rgba(240, 180, 41, 0.3);
+    padding: 8px 20px;
+    font-size: 13px;
+    color: var(--warning);
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+    font-family: var(--mono);
+    letter-spacing: 0.3px;
+    transition: opacity 0.3s ease;
+  }
+
+  .local-mode-banner.visible { display: flex; }
+
+  .local-mode-banner .local-icon { font-size: 14px; }
+
+  .local-mode-banner .local-title-name {
+    color: var(--text);
+    font-weight: 600;
+    margin-left: 4px;
+  }
+
+  .local-mode-banner .local-hint {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
   /* ── Filter Active Indicator ─────────── */
   .filter-bar {
     display: none;
@@ -783,12 +815,21 @@ export function generateBoardViewerHTML(opts: BoardViewerOptions): string {
   </div>
 </div>
 
-<!-- Offline Overlay -->
+<!-- Local Mode Banner -->
+<div class="local-mode-banner" id="localModeBanner">
+  <span class="local-icon">⚡</span>
+  <span>Local Mode</span>
+  <span id="localTitleLabel" class="local-title-name"></span>
+  <span class="local-hint">Commander offline — showing local tasks</span>
+</div>
+
+<!-- Offline Overlay (only shown when no local tasks) -->
 <div class="offline-overlay" id="offlineOverlay">
   <div class="offline-icon">⚡</div>
   <div class="offline-title">Commander Offline</div>
   <div class="offline-desc">
     The Commander service is not running or not reachable.<br>
+    No local tasks found. Use <code style="background:var(--surface2);padding:2px 6px;border-radius:4px;font-family:var(--mono);font-size:12px">tasks add</code> to get started.<br>
     The board will reconnect automatically when Commander comes back online.
   </div>
 </div>
@@ -815,6 +856,9 @@ export function generateBoardViewerHTML(opts: BoardViewerOptions): string {
   const filterBar = document.getElementById('filterBar');
   const filterAgent = document.getElementById('filterAgent');
   const offlineOverlay = document.getElementById('offlineOverlay');
+  const localModeBanner = document.getElementById('localModeBanner');
+  const localTitleLabel = document.getElementById('localTitleLabel');
+  const sidebar = document.getElementById('sidebar');
   const messageList = document.getElementById('messageList');
   const groupSection = document.getElementById('groupSection');
 
@@ -833,7 +877,7 @@ export function generateBoardViewerHTML(opts: BoardViewerOptions): string {
       const data = await res.json();
       lastData = data;
       renderBoard(data);
-      setStatus(data.connected ? 'connected' : 'offline');
+      setStatus(data.connected ? 'connected' : (data.localMode ? 'local' : 'offline'));
     } catch (err) {
       setStatus('offline');
       console.error('Fetch error:', err);
@@ -848,16 +892,35 @@ export function generateBoardViewerHTML(opts: BoardViewerOptions): string {
 
   // ── Status ───────────────────────────
   function setStatus(state) {
-    statusDot.className = 'status-dot ' + state;
+    statusDot.className = 'status-dot ' + (state === 'local' ? 'offline' : state);
     if (state === 'connected') {
       statusText.textContent = 'Connected';
       offlineOverlay.classList.remove('visible');
+      localModeBanner.classList.remove('visible');
+      // Restore Commander-only sections
+      agentStrip.style.display = '';
+      sidebar.style.display = '';
+    } else if (state === 'local') {
+      statusText.textContent = 'Local Mode';
+      offlineOverlay.classList.remove('visible');
+      localModeBanner.classList.add('visible');
+      // Update local title
+      if (lastData && lastData.localTitle) {
+        localTitleLabel.textContent = '— ' + lastData.localTitle;
+      } else {
+        localTitleLabel.textContent = '';
+      }
+      // Hide Commander-only sections (no data in local mode)
+      agentStrip.style.display = 'none';
+      sidebar.style.display = 'none';
     } else if (state === 'offline') {
       statusText.textContent = 'Offline';
       offlineOverlay.classList.add('visible');
+      localModeBanner.classList.remove('visible');
     } else {
       statusText.textContent = 'Stale';
       offlineOverlay.classList.remove('visible');
+      localModeBanner.classList.remove('visible');
     }
   }
 

@@ -29,6 +29,8 @@ interface BoardData {
 	connected: boolean;
 	timestamp: string;
 	error?: string;
+	localMode?: boolean;
+	localTitle?: string;
 }
 
 // ── Commander Data Helpers ───────────────────────────────────────────
@@ -66,15 +68,31 @@ async function gatherBoardData(): Promise<BoardData> {
 	const isAvailable = g.__piCommanderAvailable === true;
 
 	if (!isAvailable) {
+		// Fall back to local tasks from the tasks extension
+		const taskList = g.__piTaskList as { tasks: { id: number; text: string; status: string }[]; title?: string; remaining: number; total: number } | undefined;
+		const localTasks = (taskList?.tasks || []).map((t) => {
+			// Map local statuses to Commander-compatible statuses
+			const statusMap: Record<string, string> = { idle: "pending", inprogress: "working", done: "completed" };
+			return {
+				task_id: t.id,
+				description: t.text,
+				status: statusMap[t.status] || t.status,
+				created_at: new Date().toISOString(),
+				updated_at: new Date().toISOString(),
+			};
+		});
+
 		return {
-			tasks: [],
+			tasks: localTasks,
 			agents: [],
 			messages: [],
 			groups: [],
 			readyTasks: [],
 			connected: false,
+			localMode: localTasks.length > 0,
+			localTitle: taskList?.title,
 			timestamp: new Date().toISOString(),
-			error: "Commander is not connected",
+			error: localTasks.length > 0 ? undefined : "Commander is not connected",
 		};
 	}
 
