@@ -13,7 +13,7 @@ import { outputLine } from "../lib/output-box.ts";
 import { applyExtensionDefaults } from "../lib/themeMap.ts";
 import { registerActiveViewer, clearActiveViewer, notifyViewerOpen } from "../lib/viewer-session.ts";
 import { generatePrReviewViewerHTML, type UrlStatusEntry } from "./lib/pr-review-viewer-html.ts";
-import { ChromeDevtoolsMcpClient } from "./lib/chrome-devtools-mcp.ts";
+import { verifyAccessViaHttp } from "./lib/chrome-devtools-mcp.ts";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -34,54 +34,21 @@ function openBrowser(url: string): void {
 }
 
 /**
- * Verify access to a list of URLs using either the Chrome DevTools MCP client
- * or a lightweight HTTP probe fallback.
+ * Verify access to a list of URLs using HTTP probe.
+ * Note: For richer access detection with Chrome DevTools MCP, the LLM should
+ * use the native MCP tools directly (navigate_page + take_snapshot).
+ * This function is used by the viewer UI for quick URL validation.
  */
 async function verifyUrls(urls: string[]): Promise<UrlStatusEntry[]> {
-	const cdpClient = (globalThis as any).__piChromeDevtoolsMcpClient as ChromeDevtoolsMcpClient | undefined;
-
-	if (cdpClient?.isConnected()) {
-		// Use Chrome DevTools MCP for richer access detection
-		const results: UrlStatusEntry[] = [];
-		for (const url of urls) {
-			const probe = await cdpClient.verifyPageAccess(url);
-			results.push({
-				url,
-				status: probe.accessible ? "accessible" : (probe.loginRequired ? "login_required" : "failed"),
-				title: probe.title,
-				reason: probe.reason,
-			});
-		}
-		return results;
-	}
-
-	// Fallback: lightweight HTTP HEAD/GET probe
 	const results: UrlStatusEntry[] = [];
 	for (const url of urls) {
-		try {
-			const resp = await fetch(url, {
-				method: "GET",
-				redirect: "follow",
-				signal: AbortSignal.timeout(15_000),
-				headers: { "User-Agent": "agent-pi-pr-review/1.0" },
-			});
-			const body = await resp.text();
-			const lower = body.toLowerCase();
-			const loginRequired = resp.status === 401 || resp.status === 403 ||
-				/(login|sign.?in|authenticate|session.?expired)/i.test(lower.slice(0, 5000));
-
-			if (loginRequired) {
-				results.push({ url, status: "login_required", reason: "Authentication required" });
-			} else if (resp.ok) {
-				// Try to extract title
-				const titleMatch = body.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-				results.push({ url, status: "accessible", title: titleMatch?.[1]?.trim() || undefined });
-			} else {
-				results.push({ url, status: "failed", reason: `HTTP ${resp.status}` });
-			}
-		} catch (err: any) {
-			results.push({ url, status: "failed", reason: err?.message || "Request failed" });
-		}
+		const probe = await verifyAccessViaHttp(url);
+		results.push({
+			url,
+			status: probe.accessible ? "accessible" : (probe.loginRequired ? "login_required" : "failed"),
+			title: probe.title,
+			reason: probe.reason,
+		});
 	}
 	return results;
 }

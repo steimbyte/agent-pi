@@ -1,67 +1,114 @@
+// ABOUTME: Thin convenience layer over the native Chrome DevTools MCP server.
+// ABOUTME: Provides health-check (connect), access-verification, and setup guidance tools.
+// ABOUTME: The actual 29 browser tools are exposed natively via ~/.claude/mcp.json — this extension
+// ABOUTME: adds higher-level helpers that compose those native tools.
+
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { outputLine } from "../lib/output-box.ts";
 import { applyExtensionDefaults } from "../lib/themeMap.ts";
-import { ChromeDevtoolsMcpClient } from "./lib/chrome-devtools-mcp.ts";
+
+// ── Login-detection heuristics ──────────────────────────────────────
+
+const LOGIN_INDICATORS = [
+	"log in",
+	"sign in",
+	"sign-in",
+	"authenticate",
+	"session expired",
+	"repository not found",
+	"page not found",
+	"choose an account",
+];
+
+function detectLoginRequired(text: string): boolean {
+	const lower = text.toLowerCase();
+	return LOGIN_INDICATORS.some((indicator) => lower.includes(indicator));
+}
+
+// ── Tool parameters ─────────────────────────────────────────────────
 
 const ConnectParams = Type.Object({
-	server_path: Type.Optional(Type.String({ description: "Optional explicit path to the Chrome DevTools MCP server entrypoint" })),
-	timeout_ms: Type.Optional(Type.Number({ description: "Optional timeout override in milliseconds" })),
-});
-
-const NavigateParams = Type.Object({
-	url: Type.String({ description: "URL to open or inspect" }),
+	timeout_ms: Type.Optional(Type.Number({ description: "Timeout for health check in milliseconds (default: 10000)" })),
 });
 
 const AccessParams = Type.Object({
 	url: Type.String({ description: "URL whose access/auth state should be verified" }),
 });
 
-export default function(pi: ExtensionAPI) {
-	let client: ChromeDevtoolsMcpClient | null = null;
+// ── Extension ───────────────────────────────────────────────────────
 
-	async function ensureClient(params?: { server_path?: string; timeout_ms?: number }) {
-		if (client?.isConnected()) return client;
-		client = new ChromeDevtoolsMcpClient({ serverPath: params?.server_path, timeoutMs: params?.timeout_ms });
-		await client.connect();
-		(globalThis as any).__piChromeDevtoolsMcpClient = client;
-		return client;
-	}
-
+export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "chrome_devtools_mcp_connect",
-		label: "Chrome DevTools MCP Connect",
-		description: "Connect to the private Chrome DevTools MCP bridge for browser-driven workflows.",
+		label: "Chrome DevTools MCP Status",
+		description:
+			"Check if the Chrome DevTools MCP server is connected and the browser is reachable.\n" +
+			"Returns connection status, list of open pages, and setup guidance if not connected.\n" +
+			"This does NOT start the MCP server — it's started automatically by Claude CLI via ~/.claude/mcp.json.",
 		parameters: ConnectParams,
-		async execute(_toolCallId, params) {
-			const p = params as { server_path?: string; timeout_ms?: number };
-			const instance = await ensureClient(p);
-			return { content: [{ type: "text" as const, text: `Connected to Chrome DevTools MCP at ${instance.serverPath}` }] };
+		async execute(_toolCallId, _params) {
+			// The native MCP server is managed by Claude CLI. We can't directly call its tools
+			// from extension code — those tools are available to the LLM as native MCP tools.
+			// This tool serves as documentation/guidance for the LLM.
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: JSON.stringify(
+							{
+								status: "info",
+								message:
+									"Chrome DevTools MCP tools are available natively via the MCP server registered in ~/.claude/mcp.json. " +
+									"To check if the browser is reachable, call the native MCP tool `list_pages` — if it returns a list of tabs, " +
+									"the connection is healthy. If it fails, the user needs to: " +
+									"(1) ensure Chrome is running, " +
+									"(2) enable remote debugging at chrome://inspect/#remote-debugging, " +
+									"(3) restart Claude CLI.",
+								available_tools: [
+									"navigate_page",
+									"take_snapshot",
+									"take_screenshot",
+									"click",
+									"fill",
+									"fill_form",
+									"type_text",
+									"press_key",
+									"hover",
+									"drag",
+									"upload_file",
+									"handle_dialog",
+									"new_page",
+									"close_page",
+									"list_pages",
+									"select_page",
+									"wait_for",
+									"evaluate_script",
+									"list_console_messages",
+									"get_console_message",
+									"list_network_requests",
+									"get_network_request",
+									"performance_start_trace",
+									"performance_stop_trace",
+									"performance_analyze_insight",
+									"take_memory_snapshot",
+									"lighthouse_audit",
+									"emulate",
+									"resize_page",
+								],
+								setup_guide: ".context/chrome-devtools-setup.md",
+							},
+							null,
+							2,
+						),
+					},
+				],
+			};
 		},
-		renderCall(args, theme) {
-			const text = theme.fg("toolTitle", theme.bold("chrome_devtools_mcp_connect ")) + theme.fg("accent", String((args as any).server_path || "auto"));
-			return new Text(outputLine(theme, "accent", text), 0, 0);
-		},
-	});
-
-	pi.registerTool({
-		name: "chrome_devtools_mcp_call",
-		label: "Chrome DevTools MCP Call",
-		description: "Call a raw tool on the private Chrome DevTools MCP server.",
-		parameters: Type.Object({
-			tool_name: Type.String({ description: "Raw MCP tool name" }),
-			arguments: Type.Optional(Type.Record(Type.String(), Type.Any())),
-			timeout_ms: Type.Optional(Type.Number()),
-		}),
-		async execute(_toolCallId, params) {
-			const p = params as { tool_name: string; arguments?: Record<string, unknown>; timeout_ms?: number };
-			const instance = await ensureClient();
-			const result = await instance.callTool(p.tool_name, p.arguments || {}, p.timeout_ms);
-			return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
-		},
-		renderCall(args, theme) {
-			const text = theme.fg("toolTitle", theme.bold("chrome_devtools_mcp_call ")) + theme.fg("accent", String((args as any).tool_name || ""));
+		renderCall(_args, theme) {
+			const text =
+				theme.fg("toolTitle", theme.bold("chrome_devtools_mcp_connect ")) + theme.fg("accent", "health check");
 			return new Text(outputLine(theme, "accent", text), 0, 0);
 		},
 	});
@@ -69,45 +116,51 @@ export default function(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "chrome_devtools_mcp_verify_access",
 		label: "Chrome DevTools Verify Access",
-		description: "Verify whether a PR page is accessible or requires login.",
+		description:
+			"Verify whether a page is accessible or requires login.\n" +
+			"This is a guidance tool — it tells the LLM how to verify access using the native MCP tools.\n" +
+			"The LLM should: (1) navigate_page to the URL, (2) take_snapshot, (3) check for login indicators.",
 		parameters: AccessParams,
 		async execute(_toolCallId, params) {
 			const p = params as { url: string };
-			const instance = await ensureClient();
-			const result = await instance.verifyPageAccess(p.url);
-			return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: JSON.stringify(
+							{
+								instruction:
+									"To verify access, use the native Chrome DevTools MCP tools in sequence:\n" +
+									`1. Call navigate_page with url: "${p.url}"\n` +
+									"2. Call take_snapshot to get the page content\n" +
+									"3. Check the snapshot for login indicators: " +
+									LOGIN_INDICATORS.join(", ") +
+									"\n" +
+									"4. If login required, ask the user to log in manually in Chrome and retry\n" +
+									"5. If accessible, proceed with content extraction",
+								login_indicators: LOGIN_INDICATORS,
+								url: p.url,
+							},
+							null,
+							2,
+						),
+					},
+				],
+			};
 		},
 		renderCall(args, theme) {
-			const text = theme.fg("toolTitle", theme.bold("chrome_devtools_mcp_verify_access ")) + theme.fg("accent", String((args as any).url || ""));
+			const text =
+				theme.fg("toolTitle", theme.bold("chrome_devtools_mcp_verify_access ")) +
+				theme.fg("accent", String((args as any).url || ""));
 			return new Text(outputLine(theme, "accent", text), 0, 0);
 		},
 	});
 
-	pi.registerTool({
-		name: "chrome_devtools_mcp_open_page",
-		label: "Chrome DevTools Open Page",
-		description: "Open or inspect a page through Chrome DevTools MCP.",
-		parameters: NavigateParams,
-		async execute(_toolCallId, params) {
-			const p = params as { url: string };
-			const instance = await ensureClient();
-			const result = await instance.safeCallTool("open_page", { url: p.url }, 30_000);
-			return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
-		},
-		renderCall(args, theme) {
-			const text = theme.fg("toolTitle", theme.bold("chrome_devtools_mcp_open_page ")) + theme.fg("accent", String((args as any).url || ""));
-			return new Text(outputLine(theme, "accent", text), 0, 0);
-		},
-	});
+	// ── Lifecycle ────────────────────────────────────────────────────
 
 	pi.on("session_start", async (_event, ctx) => {
-		try { applyExtensionDefaults(import.meta.url as any, ctx as any); } catch {}
-	});
-
-	pi.on("session_shutdown", async () => {
-		if (client) {
-			await client.disconnect();
-			client = null;
-		}
+		try {
+			applyExtensionDefaults(import.meta.url as any, ctx as any);
+		} catch {}
 	});
 }
