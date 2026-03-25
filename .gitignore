@@ -22,9 +22,13 @@ autoresearch-results.tsv
 # Private content — NEVER tracked, NEVER pushed
 skills/private/
 extensions/private/
+extensions/__tests__/private/
 commands/private/
 .private-patterns
 .github/
 
 # Runtime / Pi state
 .pi/
+
+# Stakpak session files
+.stakpak/session*
